@@ -7,14 +7,13 @@ PREDICATE_EMBEDDING_DIM = 10
 def build_graph(vocab_size,
                 emb_dim,
                 state_dim,
-                batch_size,
                 num_classes):
     # Placeholders
-    word_indices = tf.placeholder(tf.int32, [batch_size, None])  # [batch_size, num_steps]
-    predicate_indices = tf.placeholder(tf.int32, [batch_size, None])  # [batch_size, num_steps]
+    word_indices = tf.placeholder(tf.int32, [None, None])  # [batch_size, num_steps]
+    predicate_indices = tf.placeholder(tf.int32, [None, None])  # [batch_size, num_steps]
 
-    seq_lens = tf.placeholder(tf.int32, [batch_size])
-    labels = tf.placeholder(tf.int32, [batch_size, None])
+    seq_lens = tf.placeholder(tf.int32, [None])
+    labels = tf.placeholder(tf.int32, [None, None])
     # keep_prob = tf.constant(1.0)
 
     # Embedding layer
@@ -56,11 +55,11 @@ def build_graph(vocab_size,
     preds = tf.cast(tf.argmax(logits, axis=-1), tf.int32)
 
     return {
-        'x': word_indices,
-        'predicates': predicate_indices,
-        'seqlen': seq_lens,
-        'y': labels,
+        'words': word_indices,
+        'markers': predicate_indices,
+        'lengths': seq_lens,
+        'labels': labels,
         'loss': loss,
-        'ts': train_step,
-        'preds': preds,
+        'train': train_step,
+        'predictions': preds,
     }

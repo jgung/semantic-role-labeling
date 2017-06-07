@@ -1,1 +1,2 @@
+tqdm
 tensorflow>=1.1
