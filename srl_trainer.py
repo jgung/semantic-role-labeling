@@ -34,7 +34,8 @@ class DeepSrlTrainer(object):
 
     def train(self):
         with tf.Session() as sess:
-            graph = build_graph(len(self.word_vocab), 100, 100, len(self.label_vocab))
+            graph = build_graph(len(self.word_vocab), 100, 100, 300, len(self.label_vocab))
+            # file_writer = tf.summary.FileWriter('data/logs/', sess.graph)
             sess.run(tf.global_variables_initializer())
             current_epoch, step = 0, 0
             while current_epoch < self.max_epochs:
@@ -42,6 +43,7 @@ class DeepSrlTrainer(object):
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
                         feed = {graph[k]: batch[k] for k in batch.keys()}
+                        feed[graph['keep_prob']] = 0.9
                         sess.run(graph['train'], feed_dict=feed)
                         step += 1
                         bar.update(len(batch['labels']))
@@ -50,6 +52,7 @@ class DeepSrlTrainer(object):
                 with tqdm(total=self.validation_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.validation_iterator.epoch():
                         feed = {graph[k]: batch[k] for k in batch.keys()}
+                        feed[graph['keep_prob']] = 1.0
                         predictions = sess.run(graph['predictions'], feed_dict=feed)
 
                         gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
