@@ -13,7 +13,7 @@ from srl_data import PAD_INDEX
 from srl_data import load_instances
 from srl_data import load_model_files
 from srl_reader import chunk
-from srl_model import build_graph
+from srl_model import DBLSTMTagger
 
 from tensorflow.contrib.crf import viterbi_decode
 
@@ -24,11 +24,12 @@ class DeepSrlTrainer(object):
     def __init__(self, flags):
         super(DeepSrlTrainer, self).__init__()
         self.max_epochs = 500
-        self.batch_size = 30
+        self.batch_size = 80
         self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size)
         self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size)
         self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size)
         self.vectors, self.word_vocab, self.label_vocab = load_model_files(flags.vocab)
+        self.emb_dim = self.vectors.shape[1]
 
         self.reverse_word_vocab = [None] * len(self.word_vocab)
         for key, val in self.word_vocab.iteritems():
@@ -44,26 +45,30 @@ class DeepSrlTrainer(object):
 
     def train(self):
         with tf.Session() as sess:
-            graph = build_graph(len(self.word_vocab), 100, 100, 300, len(self.label_vocab))
+            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), emb_dim=self.emb_dim, num_layers=4, marker_dim=100,
+                                 state_dim=300, num_classes=len(self.label_vocab))
+            graph.train()
             tf.summary.FileWriter('data/logs/', sess.graph)
+            print('Initializing variables...')
             sess.run(tf.global_variables_initializer())
+            graph.initialize_embeddings(sess, self.vectors)
             current_epoch, step = 0, 0
             while current_epoch < self.max_epochs:
                 print('Epoch %s' % current_epoch)
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
-                        feed = {graph[k]: batch[k] for k in batch.keys()}
-                        feed[graph['keep_prob']] = 0.9
-                        sess.run(graph['train'], feed_dict=feed)
+                        feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
+                        feed[graph.feed_dict['keep_prob']] = 0.9
+                        sess.run(graph.train_step, feed_dict=feed)
                         step += 1
                         bar.update(len(batch['labels']))
 
                 pred_ys, gold_ys, words, indices = [], [], [], []
                 with tqdm(total=self.validation_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.validation_iterator.epoch():
-                        feed = {graph[k]: batch[k] for k in batch.keys()}
-                        feed[graph['keep_prob']] = 1.0
-                        logits = sess.run(graph['logits'], feed_dict=feed)
+                        feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
+                        feed[graph.feed_dict['keep_prob']] = 1.0
+                        logits = sess.run(graph.scores, feed_dict=feed)
 
                         gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
                         pred_ys.extend(

@@ -10,77 +10,95 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 
-NUM_BIDIRECTIONAL_LAYERS = 4
 
+class DBLSTMTagger(object):
+    def __init__(self, vocab_size, emb_dim, num_layers, marker_dim, state_dim, num_classes):
+        super(DBLSTMTagger, self).__init__()
+        self.vocab_size = vocab_size
+        self.emb_dim = emb_dim
+        self.num_layers = num_layers
+        self.marker_emb_dim = marker_dim
+        self.state_dim = state_dim
+        self.num_classes = num_classes
 
-def build_graph(vocab_size,
-                emb_dim,
-                marker_emb_dim,
-                state_dim,
-                num_classes):
-    # Placeholders
-    seq_lens = tf.placeholder(tf.int32, [None], name="sequence_lengths")
-    keep_prob = tf.placeholder(tf.float32, name="dropout_keep_prob")
+        self._embedding_placeholder = None
+        self._embedding_init = None
 
-    # Embedding layer
-    with tf.name_scope('embedding_layer'):
-        word_indices = tf.placeholder(tf.int32, [None, None], "word_indices")  # [batch_size, num_steps]
-        predicate_indices = tf.placeholder(tf.int32, [None, None], name="predicate_markers")  # [batch_size, num_steps]
-        word_embedding = tf.nn.embedding_lookup(
-            tf.get_variable('word_embedding_matrix', [vocab_size, emb_dim]), word_indices, name="word_embedding")
+        self.scores = None
+        self.loss = None
+        self.train_step = None
 
-        predicate_embedding = tf.nn.embedding_lookup(
-            tf.get_variable('predicate_embedding_matrix', [2, marker_emb_dim]), predicate_indices,
-            name="predicate_marker_embedding")
-        # concatenate on embedding dim
-        inputs = tf.concat([word_embedding, predicate_embedding], 2, name="concatenated_inputs")
+        self.feed_dict = {}
+        self.dropout_keep_prob = self._add_placeholder("keep_prob", tf.float32)
+        self.sequence_lengths = self._add_placeholder("lengths", tf.int32, [None])
 
-    def dblstm_cell():
-        return DropoutWrapper(HighwayLSTMCell(state_dim, initializer=tf.orthogonal_initializer()),
-                              variational_recurrent=True, dtype=tf.float32, output_keep_prob=keep_prob)
+    def _add_placeholder(self, name, dtype, shape=None):
+        placeholder = tf.placeholder(dtype=dtype, shape=shape, name=name)
+        self.feed_dict[name] = placeholder
+        return placeholder
 
-    with tf.name_scope('deep_bidirectional_rnn'):
-        rnn_outputs, _ = deep_bidirectional_dynamic_rnn([dblstm_cell() for _ in range(NUM_BIDIRECTIONAL_LAYERS)],
-                                                        inputs, sequence_length=seq_lens, dtype=tf.float32)
+    def initialize_embeddings(self, sess, vectors):
+        sess.run(self._embedding_init, feed_dict={self._embedding_placeholder: vectors})
 
-    with tf.name_scope('linear_projection'):
-        with tf.variable_scope('softmax'):
-            softmax_w = tf.get_variable('W', [state_dim, num_classes],
-                                        initializer=tf.random_normal_initializer(0, 0.01))
-            softmax_bias = tf.get_variable('b', [num_classes], initializer=tf.constant_initializer(0.0))
+    def embedding_layer(self):
+        with tf.name_scope('embedding_layer'):
+            word_embedding_matrix = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.emb_dim]),
+                                                trainable=True, name="word_embedding_matrix")
+            self._embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.emb_dim])
+            self._embedding_init = word_embedding_matrix.assign(self._embedding_placeholder)
 
-        time_steps = tf.shape(rnn_outputs)[1]
-        rnn_outputs = tf.reshape(rnn_outputs, [-1, state_dim], name="flatten_rnn_outputs_for_linear_projection")
-        logits = tf.nn.xw_plus_b(x=rnn_outputs, weights=softmax_w, biases=softmax_bias, name="softmax_projection")
-        logits = tf.reshape(logits, [-1, time_steps, num_classes], name="unflatten_logits")
+            word_indices = self._add_placeholder("words", tf.int32, [None, None])  # [batch_size, num_steps]
+            predicate_indices = self._add_placeholder("markers", tf.int32, [None, None])  # [batch_size, num_steps]
+            word_embedding = tf.nn.embedding_lookup(word_embedding_matrix, word_indices, name="word_embedding")
 
-    with tf.name_scope('cross_entropy'):
-        labels = tf.placeholder(tf.int32, [None, None], name="labels")
-        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-        mask = tf.sequence_mask(seq_lens, name="padding_mask")
-        losses = tf.boolean_mask(losses, mask, name="remove_padding")
-        with tf.name_scope('total'):
-            loss = tf.reduce_mean(losses)
+            predicate_embedding = tf.nn.embedding_lookup(
+                tf.get_variable('predicate_embedding_matrix', [2, self.marker_emb_dim]), predicate_indices,
+                name="predicate_marker_embedding")
+            # concatenate on embedding dim
+            return tf.concat([word_embedding, predicate_embedding], 2, name="concatenated_inputs")
 
-    with tf.name_scope('train'):
-        optimizer = tf.train.AdadeltaOptimizer(learning_rate=1, epsilon=1e-6)
-        gradients, variables = zip(*optimizer.compute_gradients(loss))
-        gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
-        train_step = optimizer.apply_gradients(zip(gradients, variables))
+    def _dblstm_cell(self):
+        return DropoutWrapper(HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer()),
+                              variational_recurrent=True, dtype=tf.float32, output_keep_prob=self.dropout_keep_prob)
 
-    preds = tf.cast(tf.argmax(logits, axis=-1), tf.int32, "predictions")
+    def inference_layer(self, inputs):
+        with tf.name_scope('deep_bidirectional_rnn'):
+            rnn_outputs, _ = deep_bidirectional_dynamic_rnn(
+                [self._dblstm_cell() for _ in range(self.num_layers)],
+                inputs, sequence_length=self.sequence_lengths, dtype=tf.float32)
 
-    return {
-        'words': word_indices,
-        'markers': predicate_indices,
-        'lengths': seq_lens,
-        'labels': labels,
-        'loss': loss,
-        'train': train_step,
-        'predictions': preds,
-        'keep_prob': keep_prob,
-        'logits': logits
-    }
+        with tf.name_scope('linear_projection'):
+            softmax_weights = tf.get_variable('softmax_W', [self.state_dim, self.num_classes],
+                                              initializer=tf.random_normal_initializer(0, 0.01))
+            softmax_bias = tf.get_variable('softmax_b', [self.num_classes], initializer=tf.constant_initializer(0.0))
+
+            time_steps = tf.shape(rnn_outputs)[1]
+            rnn_outputs = tf.reshape(rnn_outputs, [-1, self.state_dim],
+                                     name="flatten_rnn_outputs_for_linear_projection")
+            logits = tf.nn.xw_plus_b(x=rnn_outputs, weights=softmax_weights, biases=softmax_bias,
+                                     name="softmax_projection")
+            self.scores = tf.reshape(logits, [-1, time_steps, self.num_classes], name="unflatten_logits")
+
+    def add_train_ops(self):
+        with tf.name_scope('cross_entropy'):
+            labels = self._add_placeholder("labels", tf.int32, [None, None])
+            losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.scores, labels=labels)
+            mask = tf.sequence_mask(self.sequence_lengths, name="padding_mask")
+            losses = tf.boolean_mask(losses, mask, name="remove_padding")
+            with tf.name_scope('total'):
+                self.loss = tf.reduce_mean(losses)
+
+        with tf.name_scope('train'):
+            optimizer = tf.train.AdadeltaOptimizer(learning_rate=1, epsilon=1e-6)
+            gradients, variables = zip(*optimizer.compute_gradients(self.loss))
+            gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
+            self.train_step = optimizer.apply_gradients(zip(gradients, variables))
+
+    def train(self):
+        # Embedding layer
+        inputs = self.embedding_layer()
+        self.inference_layer(inputs)
+        self.add_train_ops()
 
 
 def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length, dtype=None):
