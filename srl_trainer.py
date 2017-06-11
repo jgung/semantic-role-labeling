@@ -15,6 +15,8 @@ from srl_data import load_model_files
 from srl_reader import chunk
 from srl_model import build_graph
 
+from tensorflow.contrib.crf import viterbi_decode
+
 FLAGS = None
 
 
@@ -27,15 +29,23 @@ class DeepSrlTrainer(object):
         self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size)
         self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size)
         self.vectors, self.word_vocab, self.label_vocab = load_model_files(flags.vocab)
-        self.reverse_word_vocab = {val: key for key, val in self.word_vocab.iteritems()}
-        self.reverse_label_vocab = {val: key for key, val in self.label_vocab.iteritems()}
+
+        self.reverse_word_vocab = [None] * len(self.word_vocab)
+        for key, val in self.word_vocab.iteritems():
+            self.reverse_word_vocab[val] = key
+
+        self.reverse_label_vocab = [None] * len(self.label_vocab)
+        for key, val in self.label_vocab.iteritems():
+            self.reverse_label_vocab[val] = key
+
+        self.transition_params = create_transition_matrix(self.reverse_label_vocab)
 
         self.script_path = flags.script
 
     def train(self):
         with tf.Session() as sess:
             graph = build_graph(len(self.word_vocab), 100, 100, 300, len(self.label_vocab))
-            # file_writer = tf.summary.FileWriter('data/logs/', sess.graph)
+            tf.summary.FileWriter('data/logs/', sess.graph)
             sess.run(tf.global_variables_initializer())
             current_epoch, step = 0, 0
             while current_epoch < self.max_epochs:
@@ -53,10 +63,12 @@ class DeepSrlTrainer(object):
                     for batch in self.validation_iterator.epoch():
                         feed = {graph[k]: batch[k] for k in batch.keys()}
                         feed[graph['keep_prob']] = 1.0
-                        predictions = sess.run(graph['predictions'], feed_dict=feed)
+                        logits = sess.run(graph['logits'], feed_dict=feed)
 
                         gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
-                        pred_ys.extend([pred[:stop] for (pred, stop) in zip(predictions, batch['lengths'])])
+                        pred_ys.extend(
+                            [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
+                             (pred, stop) in zip(logits, batch['lengths'])])
                         words.extend(batch['words'])
                         indices.extend(batch['markers'])
                         bar.update(len(batch['labels']))
@@ -79,6 +91,16 @@ class DeepSrlTrainer(object):
             output_file.write(line + '\n')
         output_file.flush()
         output_file.seek(0)
+
+
+def create_transition_matrix(labels):
+    num_tags = len(labels)
+    transition_params = np.zeros([num_tags, num_tags], dtype=np.float32)
+    for i, prev_label in enumerate(labels):
+        for j, label in enumerate(labels):
+            if i != j and label[0] == 'I' and not prev_label == 'B' + label[1:]:
+                transition_params[i, j] = np.NINF
+    return transition_params
 
 
 class SrlDataIterator(object):
