@@ -23,6 +23,8 @@ FLAGS = None
 class DeepSrlTrainer(object):
     def __init__(self, flags):
         super(DeepSrlTrainer, self).__init__()
+        self.save_path = flags.save
+        self.load_path = flags.load
         self.max_epochs = 500
         self.batch_size = 80
         self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size)
@@ -50,9 +52,13 @@ class DeepSrlTrainer(object):
             graph.train()
             tf.summary.FileWriter('data/logs/', sess.graph)
             print('Initializing variables...')
-            sess.run(tf.global_variables_initializer())
-            graph.initialize_embeddings(sess, self.vectors)
-            current_epoch, step = 0, 0
+            if self.load_path:
+                graph.saver.restore(sess, self.load_path)
+            else:
+                sess.run(tf.global_variables_initializer())
+                graph.initialize_embeddings(sess, self.vectors)
+
+            current_epoch, step, max_score = 0, 0, float('-inf')
             while current_epoch < self.max_epochs:
                 print('Epoch %s' % current_epoch)
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
@@ -78,21 +84,30 @@ class DeepSrlTrainer(object):
                         indices.extend(batch['markers'])
                         bar.update(len(batch['labels']))
 
-                print(self.evaluate(words, pred_ys, gold_ys, indices))
+                score = self.evaluate(words, pred_ys, gold_ys, indices)
+                if score > max_score:
+                    max_score = score
+                    if self.save_path:
+                        save_path = graph.saver.save(sess, self.save_path)
+                        print("Model saved in file: %s" % save_path)
+
+                print('Epoch {} F1: {} (best: {})'.format(current_epoch, score, max_score))
                 current_epoch += 1
 
     def evaluate(self, words, pred_ys, gold_ys, indices):
         with tempfile.NamedTemporaryFile() as gold_temp, tempfile.NamedTemporaryFile() as pred_temp:
             self._write_to_file(gold_temp, words, gold_ys, indices)
             self._write_to_file(pred_temp, words, pred_ys, indices)
-            return subprocess.check_output(["perl", self.script_path, gold_temp.name, pred_temp.name]).decode('utf-8')
+            result = subprocess.check_output(['perl', self.script_path, gold_temp.name, pred_temp.name]).decode('utf-8')
+            print(result)
+            return float(result.strip().split('\n')[6].strip().split()[6])
 
     def _write_to_file(self, output_file, xs, ys, indices):
         for words, labels, markers in zip(xs, ys, indices):
             line = ''
             for word, predicted, marker in zip(
                     words, chunk([self.reverse_label_vocab[l] for l in labels], conll=True), markers):
-                line += '{} {}\n'.format(marker == 1 and word or "-", predicted)
+                line += '{} {}\n'.format(marker == 1 and word or '-', predicted)
             output_file.write(line + '\n')
         output_file.flush()
         output_file.seek(0)
@@ -168,7 +183,8 @@ def main(_):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--save', type=str, default='models', help='Directory to save models/checkpoints.')
+    parser.add_argument('--save', type=str, default='data/models/model', help='Path to save models/checkpoints.')
+    parser.add_argument('--load', type=str, help='Path to load previously saved model.')
     parser.add_argument('--train', required=True, type=str, help='Binary (*.pkl) train file path.')
     parser.add_argument('--valid', required=True, type=str, help='Binary (*.pkl) validation file path.')
     parser.add_argument('--test', required=True, type=str, help='Binary (*.pkl) test file path.')

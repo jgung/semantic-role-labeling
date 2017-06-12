@@ -27,6 +27,7 @@ class DBLSTMTagger(object):
         self.scores = None
         self.loss = None
         self.train_step = None
+        self.saver = None
 
         self.feed_dict = {}
         self.dropout_keep_prob = self._add_placeholder("keep_prob", tf.float32)
@@ -99,6 +100,7 @@ class DBLSTMTagger(object):
         inputs = self.embedding_layer()
         self.inference_layer(inputs)
         self.add_train_ops()
+        self.saver = tf.train.Saver()
 
 
 def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length, dtype=None):
