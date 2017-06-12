@@ -30,7 +30,7 @@ class DeepSrlTrainer(object):
         self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size)
         self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size)
         self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size)
-        self.vectors, self.word_vocab, self.label_vocab = load_model_files(flags.vocab)
+        self.vectors, self.word_vocab, self.label_vocab, self.char_vocab = load_model_files(flags.vocab)
         self.emb_dim = self.vectors.shape[1]
 
         self.reverse_word_vocab = [None] * len(self.word_vocab)
@@ -47,7 +47,8 @@ class DeepSrlTrainer(object):
 
     def train(self):
         with tf.Session() as sess:
-            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), emb_dim=self.emb_dim, num_layers=8, marker_dim=100,
+            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
+                                 emb_dim=self.emb_dim, num_layers=4, marker_dim=100, char_dim=32,
                                  state_dim=300, num_classes=len(self.label_vocab))
             graph.train()
             # tf.summary.FileWriter('data/logs/', sess.graph)
@@ -165,14 +166,24 @@ class SrlDataIterator(object):
         max_length = max(lengths)
         labels = self._pad_vals('labels', batch, max_length)
         words = self._pad_vals('words', batch, max_length)
+        chars = self._pad_list_feature('chars', batch, max_length)
         markers = self._pad_vals('is_predicate', batch, max_length)
-        return {'labels': labels, 'words': words, 'markers': markers, 'lengths': lengths}
+        return {'labels': labels, 'words': words, 'markers': markers, 'lengths': lengths, 'chars': chars}
 
     def _pad_vals(self, key, batch, maxlen):
         padded = np.empty([len(batch), maxlen], dtype=np.int32)
         padded.fill(self.pad_index)
         for i, sentence in enumerate(padded):
             sentence[:batch[i]['length']] = batch[i][key]
+        return padded
+
+    def _pad_list_feature(self, key, batch, maxlen):
+        padded = np.empty([len(batch), maxlen, 15], dtype=np.int32)
+        padded.fill(self.pad_index)
+        for i, sentence in enumerate(padded):
+            features = batch[i][key]
+            for index, word in enumerate(features):
+                sentence[index, :word.size] = word[:15]
         return padded
 
 

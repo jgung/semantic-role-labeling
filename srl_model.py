@@ -10,14 +10,19 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 
+CHAR_FILTERS = 32
+
 
 class DBLSTMTagger(object):
-    def __init__(self, vocab_size, emb_dim, num_layers, marker_dim, state_dim, num_classes):
+    def __init__(self, vocab_size, char_vocab_size, emb_dim, num_layers, marker_dim, char_dim, state_dim, num_classes):
         super(DBLSTMTagger, self).__init__()
         self.vocab_size = vocab_size
+        self.char_vocab_size = char_vocab_size
         self.emb_dim = emb_dim
         self.num_layers = num_layers
         self.marker_emb_dim = marker_dim
+        self.char_emb_dim = char_dim
+
         self.state_dim = state_dim
         self.num_classes = num_classes
 
@@ -48,15 +53,23 @@ class DBLSTMTagger(object):
             self._embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.emb_dim])
             self._embedding_init = word_embedding_matrix.assign(self._embedding_placeholder)
 
-            word_indices = self._add_placeholder("words", tf.int32, [None, None])  # [batch_size, num_steps]
-            predicate_indices = self._add_placeholder("markers", tf.int32, [None, None])  # [batch_size, num_steps]
+            word_indices = self._add_placeholder("words", tf.int32, [None, None])  # [batch_size, seq_len]
             word_embedding = tf.nn.embedding_lookup(word_embedding_matrix, word_indices, name="word_embedding")
 
+            predicate_indices = self._add_placeholder("markers", tf.int32, [None, None])  # [batch_size, seq_len]
             predicate_embedding = tf.nn.embedding_lookup(
                 tf.get_variable('predicate_embedding_matrix', [2, self.marker_emb_dim]), predicate_indices,
                 name="predicate_marker_embedding")
+
+            char_indices = self._add_placeholder("chars", tf.int32, [None, None, None])
+            char_embeddings = tf.nn.embedding_lookup(
+                tf.get_variable(name="char_embeddings", dtype=tf.float32,
+                                shape=[self.char_vocab_size, self.char_emb_dim]),
+                char_indices, name="char_embedding")
+            char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim)
+
             # concatenate on embedding dim
-            return tf.concat([word_embedding, predicate_embedding], 2, name="concatenated_inputs")
+            return tf.concat([word_embedding, predicate_embedding, char_conv], 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):
         return DropoutWrapper(HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer()),
@@ -159,3 +172,21 @@ class HighwayLSTMCell(LSTMCell):
 
         new_state = (LSTMStateTuple(c, m))
         return m, new_state
+
+
+def get_cnn_step(inputs, input_dim, window_size=2, num_filters=CHAR_FILTERS, seq_len=15):
+    shape = tf.shape(inputs)
+    # flatten sequences for input
+    inputs = tf.reshape(inputs, shape=[-1, shape[-2], shape[-1], 1])
+    # convolution weights
+    conv_filter = tf.get_variable("conv_w", [window_size, input_dim, 1, num_filters],
+                                  initializer=tf.random_normal_initializer(0, 0.01))
+    conv_bias = tf.get_variable("conv_b", [num_filters], initializer=tf.zeros_initializer)
+    # convolution ops
+    conv = tf.nn.conv2d(input=inputs, filter=conv_filter, strides=[1, 1, 1, 1], padding="VALID")
+    relu = tf.nn.relu(tf.nn.bias_add(value=conv, bias=conv_bias))
+    pool = tf.nn.max_pool(value=relu, ksize=[1, seq_len - window_size + 1, 1, 1], strides=[1, 1, 1, 1],
+                          padding="VALID")
+    # unflatten
+    char_conv = tf.reshape(pool, shape=[-1, shape[1], CHAR_FILTERS])
+    return char_conv
