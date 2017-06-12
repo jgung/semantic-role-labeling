@@ -47,10 +47,10 @@ class DeepSrlTrainer(object):
 
     def train(self):
         with tf.Session() as sess:
-            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), emb_dim=self.emb_dim, num_layers=4, marker_dim=100,
+            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), emb_dim=self.emb_dim, num_layers=8, marker_dim=100,
                                  state_dim=300, num_classes=len(self.label_vocab))
             graph.train()
-            tf.summary.FileWriter('data/logs/', sess.graph)
+            # tf.summary.FileWriter('data/logs/', sess.graph)
             print('Initializing variables...')
             if self.load_path:
                 graph.saver.restore(sess, self.load_path)

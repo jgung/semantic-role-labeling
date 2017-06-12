@@ -43,7 +43,7 @@ def create_dictionaries(reader, path, ext, vectors, label_dict=None, word_dict=N
     if word_dict is None:
         word_dict = {PAD_WORD: PAD_INDEX, UNKNOWN_WORD: UNKNOWN_INDEX}
     if label_dict is None:
-        label_dict = {PAD_WORD: PAD_INDEX}
+        label_dict = {PAD_WORD: PAD_INDEX, UNKNOWN_WORD: UNKNOWN_INDEX}
 
     if os.path.isdir(path):
         for input_file in os.listdir(path):
@@ -86,7 +86,7 @@ def _create_instances(reader, path, label_dict, word_dict):
     for sentence, predicates in sentences:
         words = [word_dict.get(word.lower(), word_dict.get(UNKNOWN_WORD)) for word in sentence['word']]
         for key, predicate in predicates.iteritems():
-            labels = [label_dict[pred] for pred in predicate]
+            labels = [label_dict.get(pred, UNKNOWN_INDEX) for pred in predicate]
             instances.append({"index": key,
                               "is_predicate": [index == key and 1 or 0 for index in range(0, len(words))],
                               "words": np.asarray(words, dtype=np.int32),
@@ -143,10 +143,19 @@ def main(flags):
     write_instances(flags.output, instances)
 
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--load', default=True, type=bool,
-                        help='Create new vocabularies and vector file using input data.')
+    parser.add_argument("--load", type=str2bool, nargs='?',
+                        const=True, default=False, help="Create new vocabularies and vector file using input data.")
     parser.add_argument('--input', required=True, type=str, help='CoNLL-formatted input file path.')
     parser.add_argument('--output', required=True, type=str, help='Path to save pickled input.')
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
