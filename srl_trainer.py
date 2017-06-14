@@ -5,10 +5,10 @@ import sys
 import tempfile
 from random import shuffle
 import random
+import time
 
 import numpy as np
 import tensorflow as tf
-
 from srl_data import PAD_INDEX
 from srl_data import load_instances
 from srl_data import load_model_files
@@ -16,6 +16,7 @@ from srl_reader import chunk
 from srl_model import DBLSTMTagger
 
 from tensorflow.contrib.crf import viterbi_decode
+import logging
 
 FLAGS = None
 
@@ -48,11 +49,10 @@ class DeepSrlTrainer(object):
     def train(self):
         with tf.Session() as sess:
             graph = DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
-                                 emb_dim=self.emb_dim, num_layers=4, marker_dim=100, char_dim=32,
+                                 emb_dim=self.emb_dim, num_layers=8, marker_dim=100, char_dim=32,
                                  state_dim=300, num_classes=len(self.label_vocab))
             graph.train()
             # tf.summary.FileWriter('data/logs/', sess.graph)
-            print('Initializing variables...')
             if self.load_path:
                 graph.saver.restore(sess, self.load_path)
             else:
@@ -60,8 +60,10 @@ class DeepSrlTrainer(object):
                 graph.initialize_embeddings(sess, self.vectors)
 
             current_epoch, step, max_score = 0, 0, float('-inf')
+            patience = 0
             while current_epoch < self.max_epochs:
-                print('Epoch %s' % current_epoch)
+                logging.info('Epoch %d', current_epoch)
+                then = time.time()
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
                         feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
@@ -69,7 +71,8 @@ class DeepSrlTrainer(object):
                         sess.run(graph.train_step, feed_dict=feed)
                         step += 1
                         bar.update(len(batch['labels']))
-
+                logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
+                then = time.time()
                 pred_ys, gold_ys, words, indices = [], [], [], []
                 with tqdm(total=self.validation_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.validation_iterator.epoch():
@@ -84,15 +87,18 @@ class DeepSrlTrainer(object):
                         words.extend(batch['words'])
                         indices.extend(batch['markers'])
                         bar.update(len(batch['labels']))
-
+                logging.info('Evaluation for epoch %d completed in %d seconds.', current_epoch, time.time() - then)
                 score = self.evaluate(words, pred_ys, gold_ys, indices)
-                if score > max_score:
+                if score >= max_score:
                     max_score = score
+                    patience = 0
                     if self.save_path:
                         save_path = graph.saver.save(sess, self.save_path)
-                        print("Model saved in file: %s" % save_path)
+                        logging.info("Model to file: %s" % save_path)
+                else:
+                    patience += 1
 
-                print('Epoch {} F1: {} (best: {})'.format(current_epoch, score, max_score))
+                logging.info('Epoch %d F1: %f (best: %f, %d epoch(s) ago)', current_epoch, score, max_score, patience)
                 current_epoch += 1
 
     def evaluate(self, words, pred_ys, gold_ys, indices):
@@ -100,7 +106,7 @@ class DeepSrlTrainer(object):
             self._write_to_file(gold_temp, words, gold_ys, indices)
             self._write_to_file(pred_temp, words, pred_ys, indices)
             result = subprocess.check_output(['perl', self.script_path, gold_temp.name, pred_temp.name]).decode('utf-8')
-            print(result)
+            logging.info('\n%s', result)
             return float(result.strip().split('\n')[6].strip().split()[6])
 
     def _write_to_file(self, output_file, xs, ys, indices):
@@ -188,6 +194,18 @@ class SrlDataIterator(object):
 
 
 def main(_):
+    log_formatter = logging.Formatter("%(asctime)s [%(levelname)-5.5s] %(message)s", datefmt='%m/%d/%Y %I:%M:%S %p')
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    file_handler = logging.FileHandler(FLAGS.log)
+    file_handler.setFormatter(log_formatter)
+    root_logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    root_logger.addHandler(console_handler)
+
     srl_trainer = DeepSrlTrainer(FLAGS)
     srl_trainer.train()
 
@@ -201,6 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--test', required=True, type=str, help='Binary (*.pkl) test file path.')
     parser.add_argument('--vocab', required=True, type=str, help='Path to directory containing vocabulary files.')
     parser.add_argument('--script', required=True, type=str, help='Path to evaluation script.')
+    parser.add_argument('--log', default='srl_trainer.log', type=str, help='Path to output log.')
 
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

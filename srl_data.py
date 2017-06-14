@@ -168,7 +168,7 @@ def str2bool(v):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--load", type=str2bool, nargs='?',
-                        const=True, default=True, help="Create new vocabularies and vector file using input data.")
+                        const=True, default=False, help="Create new vocabularies and vector file using input data.")
     parser.add_argument('--input', required=True, type=str, help='CoNLL-formatted input file path.')
     parser.add_argument('--output', required=True, type=str, help='Path to save pickled input.')
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
