@@ -26,10 +26,16 @@ class DeepSrlTrainer(object):
         super(DeepSrlTrainer, self).__init__()
         self.save_path = flags.save
         self.load_path = flags.load
+
+        # TODO: create config file for these options
+        self.char_feats = False
         self.max_epochs = 500
         self.batch_size = 80
-        self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size)
-        self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size)
+
+        self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=100,
+                                                 max_length=100, char_feats=self.char_feats)
+        self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size,
+                                                   char_feats=self.char_feats)
         self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size)
         self.vectors, self.word_vocab, self.label_vocab, self.char_vocab = load_model_files(flags.vocab)
         self.emb_dim = self.vectors.shape[1]
@@ -50,7 +56,7 @@ class DeepSrlTrainer(object):
         with tf.Session() as sess:
             graph = DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
                                  emb_dim=self.emb_dim, num_layers=8, marker_dim=100, char_dim=32,
-                                 state_dim=300, num_classes=len(self.label_vocab))
+                                 state_dim=300, num_classes=len(self.label_vocab), char_conv=self.char_feats)
             graph.train()
             # tf.summary.FileWriter('data/logs/', sess.graph)
             if self.load_path:
@@ -131,12 +137,14 @@ def create_transition_matrix(labels):
 
 
 class SrlDataIterator(object):
-    def __init__(self, data, batch_size, pad_index=PAD_INDEX, num_buckets=5):
+    def __init__(self, data, batch_size, pad_index=PAD_INDEX, num_buckets=5, max_length=99999, char_feats=False):
         super(SrlDataIterator, self).__init__()
         self.num_buckets = num_buckets
         self.pad_index = pad_index
         self.batch_size = batch_size
         self.size = len(data)
+        self.char_feats = char_feats
+        data = [x for x in data if x['length'] <= max_length]
         data.sort(key=lambda inst: inst['length'])
         self.bucket_size = self.size / num_buckets
         self.data = []
@@ -172,9 +180,11 @@ class SrlDataIterator(object):
         max_length = max(lengths)
         labels = self._pad_vals('labels', batch, max_length)
         words = self._pad_vals('words', batch, max_length)
-        chars = self._pad_list_feature('chars', batch, max_length)
         markers = self._pad_vals('is_predicate', batch, max_length)
-        return {'labels': labels, 'words': words, 'markers': markers, 'lengths': lengths, 'chars': chars}
+        feed_dict = {'labels': labels, 'words': words, 'markers': markers, 'lengths': lengths}
+        if self.char_feats:
+            feed_dict['chars'] = self._pad_list_feature('chars', batch, max_length)
+        return feed_dict
 
     def _pad_vals(self, key, batch, maxlen):
         padded = np.empty([len(batch), maxlen], dtype=np.int32)

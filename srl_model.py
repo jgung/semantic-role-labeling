@@ -14,7 +14,8 @@ CHAR_FILTERS = 32
 
 
 class DBLSTMTagger(object):
-    def __init__(self, vocab_size, char_vocab_size, emb_dim, num_layers, marker_dim, char_dim, state_dim, num_classes):
+    def __init__(self, vocab_size, char_vocab_size, emb_dim, num_layers, marker_dim, char_dim, state_dim, num_classes,
+                 char_conv=False):
         super(DBLSTMTagger, self).__init__()
         self.vocab_size = vocab_size
         self.char_vocab_size = char_vocab_size
@@ -22,6 +23,7 @@ class DBLSTMTagger(object):
         self.num_layers = num_layers
         self.marker_emb_dim = marker_dim
         self.char_emb_dim = char_dim
+        self.char_conv = char_conv
 
         self.state_dim = state_dim
         self.num_classes = num_classes
@@ -61,15 +63,17 @@ class DBLSTMTagger(object):
                 tf.get_variable('predicate_embedding_matrix', [2, self.marker_emb_dim]), predicate_indices,
                 name="predicate_marker_embedding")
 
-            char_indices = self._add_placeholder("chars", tf.int32, [None, None, None])
-            char_embeddings = tf.nn.embedding_lookup(
-                tf.get_variable(name="char_embeddings", dtype=tf.float32,
-                                shape=[self.char_vocab_size, self.char_emb_dim]),
-                char_indices, name="char_embedding")
-            char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim)
+            inputs = [word_embedding, predicate_embedding]
+            if self.char_conv:
+                char_indices = self._add_placeholder("chars", tf.int32, [None, None, None])
+                char_embeddings = tf.nn.embedding_lookup(
+                    tf.get_variable(name="char_embeddings", dtype=tf.float32,
+                                    shape=[self.char_vocab_size, self.char_emb_dim]),
+                    char_indices, name="char_embedding")
+                char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim)
+                inputs.append(char_conv)
 
-            # concatenate on embedding dim
-            return tf.concat([word_embedding, predicate_embedding, char_conv], 2, name="concatenated_inputs")
+            return tf.concat(inputs, 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):
         return DropoutWrapper(HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer()),
