@@ -5,10 +5,10 @@ from tensorflow.contrib.rnn import LSTMStateTuple
 # noinspection PyProtectedMember
 from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import _checked_scope
 # noinspection PyProtectedMember
-from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import _linear
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
+from tensorflow.python.util import nest
 
 CHAR_FILTERS = 32
 
@@ -60,7 +60,8 @@ class DBLSTMTagger(object):
 
             predicate_indices = self._add_placeholder("markers", tf.int32, [None, None])  # [batch_size, seq_len]
             predicate_embedding = tf.nn.embedding_lookup(
-                tf.get_variable('predicate_embedding_matrix', [2, self.marker_emb_dim]), predicate_indices,
+                tf.get_variable('predicate_embedding_matrix', [2, self.marker_emb_dim],
+                                initializer=tf.random_normal_initializer(0, 0.01)), predicate_indices,
                 name="predicate_marker_embedding")
 
             inputs = [word_embedding, predicate_embedding]
@@ -68,7 +69,8 @@ class DBLSTMTagger(object):
                 char_indices = self._add_placeholder("chars", tf.int32, [None, None, None])
                 char_embeddings = tf.nn.embedding_lookup(
                     tf.get_variable(name="char_embeddings", dtype=tf.float32,
-                                    shape=[self.char_vocab_size, self.char_emb_dim]),
+                                    shape=[self.char_vocab_size, self.char_emb_dim],
+                                    initializer=tf.random_normal_initializer(0, 0.01)),
                     char_indices, name="char_embedding")
                 char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim)
                 inputs.append(char_conv)
@@ -162,17 +164,20 @@ class HighwayLSTMCell(LSTMCell):
         with _checked_scope(self, scope or "highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
             # i = input_gate, j = new_input, f = forget_gate, o = output_gate, r = transform_gate
             with vs.variable_scope('hidden_weights'):
-                hidden_matrix = _linear(m_prev, 5 * self._num_units, bias=False)
+                hidden_matrix = linear_block_initialization(m_prev, 5 * [self._num_units], bias=False)
             ih, jh, fh, oh, rh = array_ops.split(value=hidden_matrix, num_or_size_splits=5, axis=1)
             with vs.variable_scope('input_weights'):
-                input_matrix = _linear(inputs, 6 * self._num_units, bias=True)
+                input_matrix = linear_block_initialization(inputs, 6 * [self._num_units], bias=True)
             ix, jx, fx, ox, rx, hx = array_ops.split(value=input_matrix, num_or_size_splits=6, axis=1)
 
-            i, j, f, o, r = ih + ix, jh + jx, fh + fx, oh + ox, rh + rx
-
-            c = (sigmoid(f + self._forget_bias) * c_prev + sigmoid(i) * self._activation(j))
-            r = sigmoid(r)
-            m = r * sigmoid(o) * self._activation(c) + (1 - r) * hx
+            i = sigmoid(ih + ix)
+            o = sigmoid(oh + ox)
+            f = sigmoid(fh + fx + self._forget_bias)
+            j = self._activation(jh + jx)
+            c = f * c_prev + i * j
+            t = sigmoid(rh + rx)
+            _m = o * self._activation(c)
+            m = t * _m + (1 - t) * hx
 
         new_state = (LSTMStateTuple(c, m))
         return m, new_state
@@ -194,3 +199,43 @@ def get_cnn_step(inputs, input_dim, window_size=2, num_filters=CHAR_FILTERS, seq
     # unflatten
     char_conv = tf.reshape(pool, shape=[-1, shape[1], CHAR_FILTERS])
     return char_conv
+
+
+def linear_block_initialization(args, output_sizes, bias, bias_start=0.0):
+    if args is None or (nest.is_sequence(args) and not args):
+        raise ValueError("`args` must be specified")
+    if not nest.is_sequence(args):
+        args = [args]
+
+    # Calculate the total size of arguments on dimension 1.
+    total_arg_size = 0
+    shapes = [a.get_shape() for a in args]
+    for shape in shapes:
+        if shape.ndims != 2:
+            raise ValueError("linear is expecting 2D arguments: %s" % shapes)
+        if shape[1].value is None:
+            raise ValueError("linear expects shape[1] to be provided for shape %s, "
+                             "but saw %s" % (shape, shape[1]))
+        else:
+            total_arg_size += shape[1].value
+
+    dtype = [a.dtype for a in args][0]
+
+    # Now the computation.
+    scope = vs.get_variable_scope()
+    with vs.variable_scope(scope) as outer_scope:
+        weights = tf.concat([vs.get_variable("weights_{}".format(i), [total_arg_size, size],
+                                             dtype=dtype) for i, size in enumerate(output_sizes)], axis=1)
+        if len(args) == 1:
+            res = tf.matmul(args[0], weights)
+        else:
+            res = tf.matmul(array_ops.concat(args, 1), weights)
+        if not bias:
+            return res
+        with vs.variable_scope(outer_scope) as inner_scope:
+            inner_scope.set_partitioner(None)
+            biases = vs.get_variable(
+                "biases", [sum(output_sizes)],
+                dtype=dtype,
+                initializer=tf.constant_initializer(bias_start, dtype=dtype))
+        return tf.nn.bias_add(res, biases)
