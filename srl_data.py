@@ -90,9 +90,10 @@ def _create_instances(reader, path, label_dict, word_dict, char_dict):
     sentences = reader.read_file(path)
     instances = []
     for sentence, predicates in sentences:
-        words = np.asarray([word_dict.get(word.lower(), word_dict.get(UNKNOWN_WORD)) for word in sentence['word']],
+        words = np.asarray([word_dict.get(word.lower(), UNKNOWN_INDEX) for word in sentence['word']],
                            dtype=np.int32)
-        chars = [np.asarray([PAD_INDEX] + [char_dict.get(char) for char in list(word)] + [PAD_INDEX], dtype=np.int32)
+        chars = [np.asarray([PAD_INDEX] + [char_dict.get(char, UNKNOWN_INDEX) for char in list(word)] + [PAD_INDEX],
+                            dtype=np.int32)
                  for word in sentence['word']]
         for key, predicate in predicates.iteritems():
             labels = [label_dict.get(pred, UNKNOWN_INDEX) for pred in predicate]
