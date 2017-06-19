@@ -15,7 +15,7 @@ CHAR_FILTERS = 32
 
 class DBLSTMTagger(object):
     def __init__(self, vocab_size, char_vocab_size, emb_dim, num_layers, marker_dim, char_dim, state_dim, num_classes,
-                 char_conv=False):
+                 char_len, char_conv=False):
         super(DBLSTMTagger, self).__init__()
         self.vocab_size = vocab_size
         self.char_vocab_size = char_vocab_size
@@ -24,6 +24,7 @@ class DBLSTMTagger(object):
         self.marker_emb_dim = marker_dim
         self.char_emb_dim = char_dim
         self.char_conv = char_conv
+        self.char_len = char_len
 
         self.state_dim = state_dim
         self.num_classes = num_classes
@@ -72,7 +73,7 @@ class DBLSTMTagger(object):
                                     shape=[self.char_vocab_size, self.char_emb_dim],
                                     initializer=tf.random_normal_initializer(0, 0.01)),
                     char_indices, name="char_embedding")
-                char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim)
+                char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim, seq_len=self.char_len)
                 inputs.append(char_conv)
 
             return tf.concat(inputs, 2, name="concatenated_inputs")
@@ -183,7 +184,7 @@ class HighwayLSTMCell(LSTMCell):
         return m, new_state
 
 
-def get_cnn_step(inputs, input_dim, window_size=2, num_filters=CHAR_FILTERS, seq_len=15):
+def get_cnn_step(inputs, input_dim, seq_len, window_size=2, num_filters=CHAR_FILTERS):
     shape = tf.shape(inputs)
     # flatten sequences for input
     inputs = tf.reshape(inputs, shape=[-1, shape[-2], shape[-1], 1])

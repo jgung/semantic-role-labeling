@@ -92,7 +92,8 @@ def _create_instances(reader, path, label_dict, word_dict, char_dict):
     for sentence, predicates in sentences:
         words = np.asarray([word_dict.get(word.lower(), word_dict.get(UNKNOWN_WORD)) for word in sentence['word']],
                            dtype=np.int32)
-        chars = [np.asarray([char_dict.get(char) for char in list(word)], dtype=np.int32) for word in sentence['word']]
+        chars = [np.asarray([PAD_INDEX] + [char_dict.get(char) for char in list(word)] + [PAD_INDEX], dtype=np.int32)
+                 for word in sentence['word']]
         for key, predicate in predicates.iteritems():
             labels = [label_dict.get(pred, UNKNOWN_INDEX) for pred in predicate]
             instances.append({"index": key,
