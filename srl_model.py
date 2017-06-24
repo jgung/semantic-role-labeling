@@ -115,8 +115,12 @@ class DBLSTMTagger(object):
             gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
             self.train_step = optimizer.apply_gradients(zip(gradients, variables))
 
+    def test(self):
+        inputs = self.embedding_layer()
+        self.inference_layer(inputs)
+        self.saver = tf.train.Saver()
+
     def train(self):
-        # Embedding layer
         inputs = self.embedding_layer()
         self.inference_layer(inputs)
         self.add_train_ops()

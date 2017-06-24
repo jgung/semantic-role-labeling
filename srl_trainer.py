@@ -28,15 +28,19 @@ class DeepSrlTrainer(object):
         self.load_path = flags.load
 
         # TODO: create config file for these options
-        self.char_feats = True
+        self.char_feats = False
         self.max_epochs = 500
         self.batch_size = 80
         self.char_len = 30
+        self.keep_prob = 0.9
 
         self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=100,
                                                  max_length=100, char_feats=self.char_feats, char_len=self.char_len)
         self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size,
                                                    char_feats=self.char_feats, char_len=self.char_len)
+        if flags.test:
+            self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size,
+                                                 char_feats=self.char_feats, char_len=self.char_len)
         self.vectors, self.word_vocab, self.label_vocab, self.char_vocab = load_model_files(flags.vocab)
         self.emb_dim = self.vectors.shape[1]
 
@@ -52,12 +56,15 @@ class DeepSrlTrainer(object):
 
         self.script_path = flags.script
 
+    def _load_graph(self):
+        return DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
+                            emb_dim=self.emb_dim, num_layers=8, marker_dim=28, char_dim=32,
+                            state_dim=300, num_classes=len(self.label_vocab), char_len=self.char_len,
+                            char_conv=self.char_feats)
+
     def train(self):
         with tf.Session() as sess:
-            graph = DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
-                                 emb_dim=self.emb_dim, num_layers=8, marker_dim=100, char_dim=32,
-                                 state_dim=300, num_classes=len(self.label_vocab), char_len=self.char_len,
-                                 char_conv=self.char_feats)
+            graph = self._load_graph()
             graph.train()
             # tf.summary.FileWriter('data/logs/', sess.graph)
             if self.load_path:
@@ -74,28 +81,13 @@ class DeepSrlTrainer(object):
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
                         feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                        feed[graph.feed_dict['keep_prob']] = 0.9
+                        feed[graph.feed_dict['keep_prob']] = self.keep_prob
                         sess.run(graph.train_step, feed_dict=feed)
                         step += 1
                         bar.update(len(batch['labels']))
                 logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
-                then = time.time()
-                pred_ys, gold_ys, words, indices = [], [], [], []
-                with tqdm(total=self.validation_iterator.size, leave=False, unit=' instances') as bar:
-                    for batch in self.validation_iterator.epoch():
-                        feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                        feed[graph.feed_dict['keep_prob']] = 1.0
-                        logits = sess.run(graph.scores, feed_dict=feed)
 
-                        gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
-                        pred_ys.extend(
-                            [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
-                             (pred, stop) in zip(logits, batch['lengths'])])
-                        words.extend(batch['words'])
-                        indices.extend(batch['markers'])
-                        bar.update(len(batch['labels']))
-                logging.info('Evaluation for epoch %d completed in %d seconds.', current_epoch, time.time() - then)
-                score = self.evaluate(words, pred_ys, gold_ys, indices)
+                score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
                 if score >= max_score:
                     max_score = score
                     patience = 0
@@ -107,6 +99,32 @@ class DeepSrlTrainer(object):
 
                 logging.info('Epoch %d F1: %f (best: %f, %d epoch(s) ago)', current_epoch, score, max_score, patience)
                 current_epoch += 1
+
+    def test(self):
+        with tf.Session() as sess:
+            graph = self._load_graph()
+            graph.train()
+            graph.saver.restore(sess, self.load_path)
+            self._test(graph, sess, self.test_iterator)
+
+    def _test(self, graph, sess, iterator):
+        then = time.time()
+        pred_ys, gold_ys, words, indices = [], [], [], []
+        with tqdm(total=iterator.size, leave=False, unit=' instances') as bar:
+            for batch in iterator.epoch():
+                feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
+                feed[graph.feed_dict['keep_prob']] = 1.0
+                logits = sess.run(graph.scores, feed_dict=feed)
+
+                gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
+                pred_ys.extend(
+                    [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
+                     (pred, stop) in zip(logits, batch['lengths'])])
+                words.extend(batch['words'])
+                indices.extend(batch['markers'])
+                bar.update(len(batch['labels']))
+        logging.info('Evaluation completed in %d seconds.', time.time() - then)
+        return self.evaluate(words, pred_ys, gold_ys, indices)
 
     def evaluate(self, words, pred_ys, gold_ys, indices):
         with tempfile.NamedTemporaryFile() as gold_temp, tempfile.NamedTemporaryFile() as pred_temp:
@@ -220,7 +238,10 @@ def main(_):
     root_logger.addHandler(console_handler)
 
     srl_trainer = DeepSrlTrainer(FLAGS)
-    srl_trainer.train()
+    if FLAGS.test:
+        srl_trainer.test()
+    else:
+        srl_trainer.train()
 
 
 if __name__ == '__main__':

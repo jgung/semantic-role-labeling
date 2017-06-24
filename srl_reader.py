@@ -85,7 +85,7 @@ def chunk(labeling, besio=True, conll=False):
     prev_type = None
     curr = []
     for label in labeling:
-        if label == 'O':
+        if label == 'O' or label == '<UNK>':
             state, chunk_type = 'O', ''
         else:
             split_index = label.index('-')
