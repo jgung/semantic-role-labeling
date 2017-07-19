@@ -6,6 +6,7 @@ import tempfile
 from random import shuffle
 import random
 import time
+import json
 
 import numpy as np
 import tensorflow as tf
@@ -27,15 +28,25 @@ class DeepSrlTrainer(object):
         self.save_path = flags.save
         self.load_path = flags.load
 
-        # TODO: create config file for these options
-        self.char_feats = False
-        self.max_epochs = 500
-        self.batch_size = 80
-        self.char_len = 30
-        self.keep_prob = 0.9
+        with open(flags.config, 'r') as config:
+            conf = json.load(config)
+            logging.info("%s" % conf)
+            self.char_feats = conf.get('char_feats') or False
+            self.char_len = conf.get('char_len') or 0
+            self.char_dim = conf.get('char_dim') or 0
+            self.char_filters = conf.get('char_filters') or 0
+            self.max_epochs = conf['max_epochs']
+            self.batch_size = conf['batch_size']
+            self.keep_prob = conf['keep_prob']
+            self.lstm_hidden_dim = conf['lstm_hidden_dim']
+            self.lstm_num_layers = conf['lstm_num_layers']
+            self.max_length = conf['max_length']
+            self.num_buckets = conf['num_buckets']
+            self.marker_dim = conf['marker_dim']
+            self.marker_buckets = conf['marker_buckets']
 
-        self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=100,
-                                                 max_length=100, char_feats=self.char_feats, char_len=self.char_len)
+        self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=self.num_buckets,
+                                                 max_length=self.max_length, char_feats=self.char_feats, char_len=self.char_len)
         self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size,
                                                    char_feats=self.char_feats, char_len=self.char_len)
         if flags.test:
@@ -57,10 +68,11 @@ class DeepSrlTrainer(object):
         self.script_path = flags.script
 
     def _load_graph(self):
-        return DBLSTMTagger(vocab_size=len(self.word_vocab), char_vocab_size=len(self.char_vocab),
-                            emb_dim=self.emb_dim, num_layers=8, marker_dim=28, char_dim=32,
-                            state_dim=300, num_classes=len(self.label_vocab), char_len=self.char_len,
-                            char_conv=self.char_feats)
+        return DBLSTMTagger(vocab_size=len(self.word_vocab), num_classes=len(self.label_vocab),
+                            emb_dim=self.emb_dim, num_layers=self.lstm_num_layers, state_dim=self.lstm_hidden_dim,
+                            marker_dim=self.marker_dim, marker_buckets=self.marker_buckets,
+                            char_vocab_size=len(self.char_vocab), char_dim=self.char_dim,
+                            char_len=self.char_len, char_conv=self.char_feats, char_filters=self.char_filters)
 
     def train(self):
         with tf.Session() as sess:
@@ -156,8 +168,7 @@ def create_transition_matrix(labels):
 
 
 class SrlDataIterator(object):
-    def __init__(self, data, batch_size, pad_index=PAD_INDEX, num_buckets=5, max_length=99999, char_feats=False,
-                 char_len=30):
+    def __init__(self, data, batch_size, pad_index=PAD_INDEX, num_buckets=5, max_length=99999, char_feats=False, char_len=0):
         super(SrlDataIterator, self).__init__()
         self.num_buckets = num_buckets
         self.pad_index = pad_index
@@ -238,22 +249,26 @@ def main(_):
     root_logger.addHandler(console_handler)
 
     srl_trainer = DeepSrlTrainer(FLAGS)
+
+    if FLAGS.train:
+        if not FLAGS.valid:
+            logging.warn('Missing required validation (dev) set. Use "--valid path/to/valid.pkl" to specify validation data.')
+            return
+        srl_trainer.train()
     if FLAGS.test:
         srl_trainer.test()
-    else:
-        srl_trainer.train()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--save', type=str, default='data/models/model', help='Path to save models/checkpoints.')
     parser.add_argument('--load', type=str, help='Path to load previously saved model.')
-    parser.add_argument('--train', required=True, type=str, help='Binary (*.pkl) train file path.')
-    parser.add_argument('--valid', required=True, type=str, help='Binary (*.pkl) validation file path.')
-    parser.add_argument('--test', required=True, type=str, help='Binary (*.pkl) test file path.')
+    parser.add_argument('--train', type=str, help='Binary (*.pkl) train file path.')
+    parser.add_argument('--valid', type=str, help='Binary (*.pkl) validation file path.')
+    parser.add_argument('--test', required=False, type=str, help='Binary (*.pkl) test file path.')
     parser.add_argument('--vocab', required=True, type=str, help='Path to directory containing vocabulary files.')
     parser.add_argument('--script', required=True, type=str, help='Path to evaluation script.')
     parser.add_argument('--log', default='srl_trainer.log', type=str, help='Path to output log.')
-
+    parser.add_argument('--config', required=True, type=str, help='Path to json configuration file.')
     FLAGS, unparsed = parser.parse_known_args()
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

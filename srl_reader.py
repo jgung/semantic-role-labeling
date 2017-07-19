@@ -74,6 +74,12 @@ class Conll2005Reader(ConllReader):
             {0: "id", 1: "pos", 2: "parse", 3: "word", 4: "ne", 5: "roleset", 6: "predicate"}, 7)
 
 
+class Conll2012Reader(ConllReader):
+    def __init__(self):
+        super(Conll2012Reader, self).__init__(
+            {3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"}, 11, 1)
+
+
 def get_type(iob_label):
     return iob_label.replace("B-", "").replace("E-", "").replace("S-", "").replace("I-", "")
 

@@ -1,0 +1,11 @@
+{
+  "max_epochs": 500,
+  "batch_size": 80,
+  "keep_prob": 0.9,
+  "max_length": 100,
+  "num_buckets": 100,
+  "lstm_num_layers": 8,
+  "lstm_hidden_dim": 300,
+  "marker_dim": 100,
+  "marker_buckets": 2
+}
