@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import os
 from collections import OrderedDict
-from srl_reader import Conll2005Reader
+from srl_reader import ConllPhraseReader
 
 PAD_WORD = "<PAD>"
 UNKNOWN_WORD = "<UNK>"
@@ -39,7 +39,7 @@ def initialize_vectors(vector_map, vocabulary, dim):
     return emb
 
 
-def create_dictionaries(reader, path, ext, vectors, label_dict=None, word_dict=None, char_dict=None):
+def create_dictionaries(reader, path, ext, vectors, label_dict=None, word_dict=None, char_dict=None, phrase=False):
     if word_dict is None:
         word_dict = {PAD_WORD: PAD_INDEX, UNKNOWN_WORD: UNKNOWN_INDEX}
     if label_dict is None:
@@ -50,11 +50,17 @@ def create_dictionaries(reader, path, ext, vectors, label_dict=None, word_dict=N
     if os.path.isdir(path):
         for input_file in os.listdir(path):
             if input_file.endswith(ext):
-                label_dict, word_dict, char_dict = _create_dictionary(reader, os.path.join(path, input_file), vectors,
-                                                                      label_dict, word_dict, char_dict)
+                if phrase:
+                    label_dict, word_dict, char_dict = _create_dictionary_phrases(reader, os.path.join(path, input_file), vectors,
+                                                                                  label_dict, word_dict, char_dict)
+                else:
+                    label_dict, word_dict, char_dict = _create_dictionary(reader, os.path.join(path, input_file), vectors,
+                                                                          label_dict, word_dict, char_dict)
         return label_dict, word_dict, char_dict
-
-    return _create_dictionary(reader, path, vectors, label_dict, word_dict, char_dict)
+    if phrase:
+        return _create_dictionary_phrases(reader, path, vectors, label_dict, word_dict, char_dict)
+    else:
+        return _create_dictionary(reader, path, vectors, label_dict, word_dict, char_dict)
 
 
 def _create_dictionary(reader, path, vectors, label_dict, word_dict, char_dict):
@@ -75,15 +81,40 @@ def _create_dictionary(reader, path, vectors, label_dict, word_dict, char_dict):
     return label_dict, word_dict, char_dict
 
 
-def create_instances(reader, path, ext, label_dict, word_dict, char_dict):
+def _create_dictionary_phrases(reader, path, vectors, label_dict, word_dict, char_dict):
+    sentences = reader.read_file(path)
+    for sentence, predicates in sentences:
+        for chunk in sentence:
+            for word in chunk['word']:
+                characters = list(word)
+                for char in characters:
+                    if char not in char_dict:
+                        char_dict[char] = len(char_dict)
+                word = word.lower()
+                if (word not in word_dict) and (word in vectors):
+                    word_dict[word] = len(word_dict)
+        for key, predicate in predicates.iteritems():
+            for label in predicate:
+                if label not in label_dict:
+                    label_dict[label] = len(label_dict)
+    return label_dict, word_dict, char_dict
+
+
+def create_instances(reader, path, ext, label_dict, word_dict, char_dict, phrases=False):
     if os.path.isdir(path):
         instances = []
         for input_file in os.listdir(path):
             if input_file.endswith(ext):
-                instances.extend(
-                    _create_instances(reader, os.path.join(path, input_file), label_dict, word_dict, char_dict))
+                if phrases:
+                    result = _create_instances_phrases(reader, os.path.join(path, input_file), label_dict, word_dict, char_dict)
+                else:
+                    result = _create_instances(reader, os.path.join(path, input_file), label_dict, word_dict, char_dict)
+                instances.extend(result)
         return instances
-    return _create_instances(reader, path, label_dict, word_dict, char_dict)
+    if phrases:
+        return _create_instances_phrases(reader, path, label_dict, word_dict, char_dict)
+    else:
+        return _create_instances(reader, path, label_dict, word_dict, char_dict)
 
 
 def _create_instances(reader, path, label_dict, word_dict, char_dict):
@@ -103,6 +134,31 @@ def _create_instances(reader, path, label_dict, word_dict, char_dict):
                               "chars": chars,
                               "labels": np.asarray(labels, dtype=np.int32),
                               "length": words.size})
+    return instances
+
+
+def _create_instances_phrases(reader, path, label_dict, word_dict, char_dict):
+    sentences = reader.read_file(path)
+    instances = []
+    for sentence, predicates in sentences:
+        words = []
+        chars = []
+        lengths = []
+        for chunk in sentence:
+            chunk_words = np.asarray([word_dict.get(word.lower(), UNKNOWN_INDEX) for word in chunk['word']], dtype=np.int32)
+            chunk_chars = [np.asarray([PAD_INDEX] + [char_dict.get(char, UNKNOWN_INDEX) for char in list(word)] + [PAD_INDEX],
+                                      dtype=np.int32) for word in chunk['word']]
+            words.append(chunk_words)
+            chars.append(chunk_chars)
+            lengths.append(chunk_words.size)
+        for key, predicate in predicates.iteritems():
+            labels = [label_dict.get(pred, UNKNOWN_INDEX) for pred in predicate]
+            instances.append({"index": key,
+                              "is_predicate": [index == key and 1 or 0 for index in range(0, len(words))],
+                              "words": words,
+                              "chars": chars,
+                              "labels": np.asarray(labels, dtype=np.int32),
+                              "length": len(words)})
     return instances
 
 
@@ -145,7 +201,8 @@ def main(flags):
         print('Reading vectors at {}...'.format(flags.vectors))
         vectors, vec_dim = read_vectors(flags.vectors)
         print('Building dictionaries...')
-        labels_dict, words_dict, char_dict = create_dictionaries(Conll2005Reader(), flags.input, flags.ext, vectors)
+        labels_dict, words_dict, char_dict = create_dictionaries(ConllPhraseReader(), flags.input, flags.ext, vectors,
+                                                                 phrase=flags.phrase)
         print('Initializing embeddings...')
         embedding = initialize_vectors(vector_map=vectors, vocabulary=words_dict, dim=vec_dim)
         print('Writing model files to {}...'.format(flags.vocab))
@@ -153,7 +210,8 @@ def main(flags):
     else:
         _, words_dict, labels_dict, char_dict = load_model_files(flags.vocab)
     print('Creating instances...')
-    instances = create_instances(Conll2005Reader(), flags.input, flags.ext, labels_dict, words_dict, char_dict)
+    instances = create_instances(ConllPhraseReader(), flags.input, flags.ext, labels_dict, words_dict, char_dict,
+                                 phrases=flags.phrase)
     print('Writing instances to {}...'.format(flags.output))
     write_instances(flags.output, instances)
 
@@ -176,4 +234,6 @@ if __name__ == '__main__':
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
     parser.add_argument('--vocab', required=True, type=str, help='Vocab directory path.')
     parser.add_argument('--vectors', required=False, type=str, help='Path to word vectors.')
+    parser.add_argument("--phrase", type=str2bool, nargs='?',
+                        const=True, default=False, help="Read phrase-constrained SRL data.")
     main(parser.parse_args())

@@ -45,10 +45,13 @@ class DeepSrlTrainer(object):
             self.marker_dim = conf['marker_dim']
             self.marker_buckets = conf['marker_buckets']
 
-        self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=self.num_buckets,
-                                                 max_length=self.max_length, char_feats=self.char_feats, char_len=self.char_len)
-        self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size,
-                                                   char_feats=self.char_feats, char_len=self.char_len)
+        if flags.train:
+            self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, num_buckets=self.num_buckets,
+                                                     max_length=self.max_length, char_feats=self.char_feats,
+                                                     char_len=self.char_len)
+        if flags.valid:
+            self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size,
+                                                       char_feats=self.char_feats, char_len=self.char_len)
         if flags.test:
             self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size,
                                                  char_feats=self.char_feats, char_len=self.char_len)
@@ -73,6 +76,17 @@ class DeepSrlTrainer(object):
                             marker_dim=self.marker_dim, marker_buckets=self.marker_buckets,
                             char_vocab_size=len(self.char_vocab), char_dim=self.char_dim,
                             char_len=self.char_len, char_conv=self.char_feats, char_filters=self.char_filters)
+
+    def get_weights(self, variable="softmax_W", labels=None):
+        with tf.Session() as sess:
+            graph = self._load_graph()
+            graph.test()
+            graph.saver.restore(sess, self.load_path)
+            softmax_w = [v for v in tf.global_variables() if variable in v.name][0]
+            weights = softmax_w.eval().transpose()
+            if labels and len(labels) == weights.shape[0]:
+                for label, weight in zip(labels, weights):
+                    print("{} {}".format(label, " ".join(["%.5f" % x for x in weight])))
 
     def train(self):
         with tf.Session() as sess:
@@ -250,6 +264,8 @@ def main(_):
 
     srl_trainer = DeepSrlTrainer(FLAGS)
 
+    if FLAGS.load:
+        srl_trainer.get_weights(labels=srl_trainer.reverse_label_vocab)
     if FLAGS.train:
         if not FLAGS.valid:
             logging.warn('Missing required validation (dev) set. Use "--valid path/to/valid.pkl" to specify validation data.')

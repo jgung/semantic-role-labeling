@@ -6,11 +6,13 @@ CONTINUATION = "*"
 
 
 class ConllReader(object):
-    def __init__(self, index_field_map, pred_start, pred_end=0):
+    def __init__(self, index_field_map, pred_start, pred_end=0, phrase_index=None, pred_key="predicate"):
         super(ConllReader, self).__init__()
         self._index_field_map = index_field_map
         self._pred_start = pred_start
         self._pred_end = pred_end
+        self._phrase_index = phrase_index
+        self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
 
     def read_file(self, path):
         results = []
@@ -19,32 +21,74 @@ class ConllReader(object):
             for line in conll_file:
                 line = line.strip()
                 if not line and lines:
-                    results.append(self.read_sentence(lines))
+                    rows = [line.split() for line in lines]
+                    if self._phrase_index:
+                        results.append(self.read_phrases(rows))
+                    else:
+                        results.append((self.read_fields(rows), self.read_predicates(rows)))
                     lines = []
                     continue
                 lines.append(line)
         return results
 
-    def read_sentence(self, lines):
-        sentence = defaultdict(list)
+    def read_phrases(self, rows):
+        phrases = []
+        predicates = self.read_predicates(rows)
+        chunk_preds = defaultdict(list)
+        for i, (index, phrase) in enumerate(ConllReader._read_chunks(rows, phrase_index=self._phrase_index)):
+            phrases.append(self.read_fields(phrase))
+            for pred_index, preds in predicates.items():
+                chunk_preds[pred_index].append(preds[index])
+        return phrases, chunk_preds
+
+    @staticmethod
+    def _read_chunks(rows, phrase_index):
+        chunked_rows = []
+        curr_chunk = []
+        curr_label = None
+        index = None
+        for i, row in enumerate(rows):
+            prev_label = curr_label
+            curr_label = row[phrase_index]
+            if end_of_chunk(prev_label, curr_label):
+                chunked_rows.append((index, curr_chunk))
+                curr_chunk = []
+            elif curr_chunk:
+                curr_chunk.append(row)
+
+            if start_of_chunk(prev_label, curr_label):
+                index = i
+                curr_chunk.append(row)
+        if curr_chunk:
+            chunked_rows.append((index, curr_chunk))
+        return chunked_rows
+
+    def read_predicates(self, rows):
+        pred_indices = []
         pred_cols = defaultdict(list)
-        rows = [line.split() for line in lines]
+        for i, row in enumerate(rows):
+            predicate = row[self._pred_index]
+            if predicate is not "-":
+                pred_indices.append(i)
+            for index in range(self._pred_start, len(row) - self._pred_end):
+                pred_cols[index - self._pred_start].append(row[index])
+        # convert from CoNLL05 labels to IOB labels
+        for key, val in pred_cols.iteritems():
+            pred_cols[key] = ConllReader._convert_to_iob(val)
+        # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
+        index = 0
+        predicates = {}
+        for i in pred_indices:
+            predicates[i] = pred_cols[index]
+            index += 1
+        return predicates
+
+    def read_fields(self, rows):
+        sentence = defaultdict(list)
         for row in rows:
             for index, val in self._index_field_map.iteritems():
                 sentence[val].append(row[index])
-            for index in range(self._pred_start, len(row) - self._pred_end):
-                pred_cols[index - self._pred_start].append(row[index])
-        for key, val in pred_cols.iteritems():
-            pred_cols[key] = ConllReader._convert_to_iob(val)
-
-        index = 0
-        predicates = {}
-        for i, pred in enumerate(sentence["predicate"]):
-            if pred is not "-":
-                predicates[i] = pred_cols[index]
-                index += 1
-
-        return sentence, predicates
+        return sentence
 
     @staticmethod
     def _convert_to_iob(labels):
@@ -80,8 +124,38 @@ class Conll2012Reader(ConllReader):
             {3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"}, 11, 1)
 
 
-def get_type(iob_label):
-    return iob_label.replace("B-", "").replace("E-", "").replace("S-", "").replace("I-", "")
+class ConllPhraseReader(ConllReader):
+    def __init__(self):
+        super(ConllPhraseReader, self).__init__(
+            {0: "word", 1: "phrase", 2: "roleset", 3: "predicate"}, 4, phrase_index=1)
+
+
+def end_of_chunk(prev, curr):
+    prev_val, prev_tag = _get_val_and_tag(prev)
+    curr_val, curr_tag = _get_val_and_tag(curr)
+    if prev_val == 'O':
+        return True
+    if not prev_val:
+        return False
+    if prev_tag != curr_tag or prev_val == 'E' or curr_val == 'B' or curr_val == 'O' or prev_val == 'O':
+        return True
+    return False
+
+
+def start_of_chunk(prev, curr):
+    prev_val, prev_tag = _get_val_and_tag(prev)
+    curr_val, curr_tag = _get_val_and_tag(curr)
+    if prev_tag != curr_tag or curr_val == 'B' or curr_val == 'O':
+        return True
+    return False
+
+
+def _get_val_and_tag(label):
+    if not label:
+        return '', ''
+    if label == 'O':
+        return label, ''
+    return label.split('-')
 
 
 def chunk(labeling, besio=True, conll=False):
@@ -128,3 +202,7 @@ def to_conll(iob_label):
     if iob_label.startswith("E-"):
         return "*)"
     return "*"
+
+
+def get_type(iob_label):
+    return iob_label.replace("B-", "").replace("E-", "").replace("S-", "").replace("I-", "")
