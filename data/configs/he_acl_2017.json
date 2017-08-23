@@ -6,6 +6,17 @@
   "num_buckets": 100,
   "lstm_num_layers": 8,
   "lstm_hidden_dim": 300,
-  "marker_dim": 100,
-  "marker_buckets": 2
+  "features": [
+    {
+      "name": "words",
+      "dim": -1,
+      "vocab_size": -1,
+      "initializer": "vectors.pkl"
+    },
+    {
+      "name": "markers",
+      "dim": 100,
+      "vocab_size": 2
+    }
+  ]
 }

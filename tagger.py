@@ -11,27 +11,30 @@ from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.util import nest
 
 
+class ConvNet(object):
+    def __init__(self, window_size, input_dim, num_filters, max_length):
+        super(ConvNet, self).__init__()
+        self.window_size = window_size
+        self.input_dim = input_dim
+        self.num_filters = num_filters
+        self.max_length = max_length
+
+    def apply(self, feature):
+        return get_cnn_step(inputs=feature, input_dim=self.input_dim, seq_len=self.max_length, char_filters=self.num_filters,
+                            window_size=self.window_size)
+
+
 class DBLSTMTagger(object):
-    def __init__(self, vocab_size, emb_dim, num_layers, marker_dim, marker_buckets, state_dim, num_classes,
-                 char_conv=False, char_vocab_size=0, char_dim=0, char_len=0, char_filters=0):
+    def __init__(self, features, num_layers, state_dim, num_classes):
         super(DBLSTMTagger, self).__init__()
-        self.vocab_size = vocab_size
-        self.emb_dim = emb_dim
+        self.features = features
+
         self.num_layers = num_layers
-        self.marker_emb_dim = marker_dim
-        self.marker_buckets = marker_buckets
-
-        self.char_conv = char_conv
-        self.char_vocab_size = char_vocab_size
-        self.char_len = char_len
-        self.char_emb_dim = char_dim
-        self.char_filters = char_filters
-
         self.state_dim = state_dim
         self.num_classes = num_classes
 
-        self._embedding_placeholder = None
-        self._embedding_init = None
+        self._embedding_placeholder = {}
+        self._embedding_init = {}
 
         self.scores = None
         self.loss = None
@@ -47,37 +50,28 @@ class DBLSTMTagger(object):
         self.feed_dict[name] = placeholder
         return placeholder
 
-    def initialize_embeddings(self, sess, vectors):
-        sess.run(self._embedding_init, feed_dict={self._embedding_placeholder: vectors})
+    def initialize_embeddings(self, sess):
+        for feature in self.features:
+            if feature.initializer is not None:
+                placeholder = self._embedding_placeholder[feature.name]
+                init = self._embedding_init[feature.name]
+                sess.run(init, feed_dict={placeholder: feature.initializer})
 
     def embedding_layer(self):
         with tf.name_scope('embedding_layer'):
-            word_embedding_matrix = tf.Variable(tf.constant(0.0, shape=[self.vocab_size, self.emb_dim]),
-                                                trainable=True, name="word_embedding_matrix")
-            self._embedding_placeholder = tf.placeholder(tf.float32, [self.vocab_size, self.emb_dim])
-            self._embedding_init = word_embedding_matrix.assign(self._embedding_placeholder)
-
-            word_indices = self._add_placeholder("words", tf.int32, [None, None])  # [batch_size, seq_len]
-            word_embedding = tf.nn.embedding_lookup(word_embedding_matrix, word_indices, name="word_embedding")
-
-            predicate_indices = self._add_placeholder("markers", tf.int32, [None, None])  # [batch_size, seq_len]
-            predicate_embedding = tf.nn.embedding_lookup(
-                tf.get_variable('predicate_embedding_matrix', [self.marker_buckets, self.marker_emb_dim],
-                                initializer=tf.random_normal_initializer(0, 0.01)), predicate_indices,
-                name="predicate_marker_embedding")
-
-            inputs = [word_embedding, predicate_embedding]
-            if self.char_conv:
-                char_indices = self._add_placeholder("chars", tf.int32, [None, None, None])
-                char_embeddings = tf.nn.embedding_lookup(
-                    tf.get_variable(name="char_embeddings", dtype=tf.float32,
-                                    shape=[self.char_vocab_size, self.char_emb_dim],
-                                    initializer=tf.random_normal_initializer(0, 0.01)),
-                    char_indices, name="char_embedding")
-                char_conv = get_cnn_step(inputs=char_embeddings, input_dim=self.char_emb_dim, seq_len=self.char_len,
-                                         char_filters=self.char_filters)
-                inputs.append(char_conv)
-
+            inputs = []
+            for feature in self.features:
+                embedding_matrix = tf.get_variable(name='{}_embedding_matrix'.format(feature.name),
+                                                   shape=[feature.vocab_size, feature.dim],
+                                                   initializer=tf.random_normal_initializer(0, 0.01))
+                if feature.initializer is not None:
+                    self._embedding_placeholder[feature.name] = tf.placeholder(tf.float32, [feature.vocab_size, feature.dim])
+                    self._embedding_init[feature.name] = embedding_matrix.assign(self._embedding_placeholder[feature.name])
+                shape = [None, None, None] if feature.subword else [None, None]
+                indices = self._add_placeholder(name=feature.name, dtype=tf.int32, shape=shape)
+                embedding = tf.nn.embedding_lookup(params=embedding_matrix, ids=indices, name='{}_embedding'.format(feature.name))
+                result = feature.function.apply(embedding)
+                inputs.append(result)
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):

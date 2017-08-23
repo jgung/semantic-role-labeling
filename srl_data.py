@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import os
 from collections import OrderedDict
-from srl_reader import ConllPhraseReader
+from srl_reader import Conll2005Reader
 
 PAD_WORD = "<PAD>"
 UNKNOWN_WORD = "<UNK>"
@@ -129,7 +129,7 @@ def _create_instances(reader, path, label_dict, word_dict, char_dict):
         for key, predicate in predicates.iteritems():
             labels = [label_dict.get(pred, UNKNOWN_INDEX) for pred in predicate]
             instances.append({"index": key,
-                              "is_predicate": [index == key and 1 or 0 for index in range(0, words.size)],
+                              "markers": [index == key and 1 or 0 for index in range(0, words.size)],
                               "words": words,
                               "chars": chars,
                               "labels": np.asarray(labels, dtype=np.int32),
@@ -197,11 +197,12 @@ def load_instances(input_path):
 
 
 def main(flags):
+    reader = Conll2005Reader()
     if flags.load:
         print('Reading vectors at {}...'.format(flags.vectors))
         vectors, vec_dim = read_vectors(flags.vectors)
         print('Building dictionaries...')
-        labels_dict, words_dict, char_dict = create_dictionaries(ConllPhraseReader(), flags.input, flags.ext, vectors,
+        labels_dict, words_dict, char_dict = create_dictionaries(reader, flags.input, flags.ext, vectors,
                                                                  phrase=flags.phrase)
         print('Initializing embeddings...')
         embedding = initialize_vectors(vector_map=vectors, vocabulary=words_dict, dim=vec_dim)
@@ -210,7 +211,7 @@ def main(flags):
     else:
         _, words_dict, labels_dict, char_dict = load_model_files(flags.vocab)
     print('Creating instances...')
-    instances = create_instances(ConllPhraseReader(), flags.input, flags.ext, labels_dict, words_dict, char_dict,
+    instances = create_instances(reader, flags.input, flags.ext, labels_dict, words_dict, char_dict,
                                  phrases=flags.phrase)
     print('Writing instances to {}...'.format(flags.output))
     write_instances(flags.output, instances)
