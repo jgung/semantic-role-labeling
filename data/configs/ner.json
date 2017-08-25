@@ -1,0 +1,37 @@
+{
+  "max_epochs": 500,
+  "batch_size": 80,
+  "keep_prob": 0.9,
+  "max_length": 100,
+  "num_buckets": 100,
+  "lstm_num_layers": 4,
+  "lstm_hidden_dim": 300,
+  "features": [
+    {
+      "name": "words",
+      "dim": -1,
+      "initializer": {
+        "pkl_path": "vectors.pkl",
+        "initializer_path": "data/vectors/senna.txt"
+      },
+      "extractor": {
+        "name": "lower",
+        "key": "word"
+      }
+    },
+    {
+      "name": "chars",
+      "dim": 15,
+      "function": {
+        "name": "ConvNet",
+        "window_size": 2,
+        "num_filters": 32,
+        "max_length": 15
+      },
+      "extractor": {
+        "name": "chars",
+        "key": "word"
+      }
+    }
+  ]
+}

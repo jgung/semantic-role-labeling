@@ -2,38 +2,34 @@ import argparse
 
 import features
 from features import LABEL_KEY
-from srl_reader import Conll2005Reader, Conll2012Reader
+from srl_reader import Conll2003Reader
 from srl_utils import serialize
 
-MARKER_KEY = 'markers'
 
-
-class SrlFeatureExtractor(features.SequenceInstanceProcessor):
+class NerFeatureExtractor(features.SequenceInstanceProcessor):
     def __init__(self, feats):
-        super(SrlFeatureExtractor, self).__init__(feats)
+        super(NerFeatureExtractor, self).__init__(feats)
 
     def read_instances(self, sentences, train=False):
         """
-        Read SRL instances from a list of SRL annotated sentences.
-        :param sentences: SRL sentences
+        Read NER instances from a list of NER annotated sentences
+        :param sentences: NER sentences
         :param train: train vocabularies during instance extraction (fixed if False)
-        :return: SRL instances
+        :return: NER instances
         """
         if train:
             self._init_vocabularies()
         results = []
-        for sentence, predicates in sentences:
-            for key, labels in predicates.iteritems():
-                sentence[LABEL_KEY] = labels
-                sentence[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
-                results.append(self.extract(sentence))
+        for sentence in sentences:
+            sentence[LABEL_KEY] = sentence['ne']
+            results.append(self.extract(sentence))
         return results
 
 
 def main(flags):
-    reader = Conll2005Reader() if flags.dataset == 'conll05' else Conll2012Reader()
+    reader = Conll2003Reader()
     feats = features.get_features_from_config(flags.config)
-    feature_extractor = SrlFeatureExtractor(feats=feats)
+    feature_extractor = NerFeatureExtractor(feats=feats)
     train = True
     if flags.mode != 'new':
         feature_extractor.load(flags.vocab)
@@ -55,6 +51,4 @@ if __name__ == '__main__':
     parser.add_argument('--config', required=True, type=str, help='Path to configuration json.')
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
     parser.add_argument('--vocab', required=True, type=str, help='Vocab directory path.')
-    parser.add_argument('--dataset', default='conll05', choices=['conll05', 'conll2012'], type=str,
-                        help='Dataset (conll05 or conll2012).')
     main(parser.parse_args())

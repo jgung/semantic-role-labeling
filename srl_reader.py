@@ -7,13 +7,9 @@ CONTINUATION = "*"
 
 
 class ConllReader(object):
-    def __init__(self, index_field_map, pred_start, pred_end=0, phrase_index=None, pred_key="predicate"):
+    def __init__(self, index_field_map):
         super(ConllReader, self).__init__()
         self._index_field_map = index_field_map
-        self._pred_start = pred_start
-        self._pred_end = pred_end
-        self._phrase_index = phrase_index
-        self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
 
     def read_file(self, path):
         results = []
@@ -22,15 +18,14 @@ class ConllReader(object):
             for line in conll_file:
                 line = line.strip()
                 if not line and lines:
-                    rows = [line.split() for line in lines]
-                    if self._phrase_index:
-                        results.append(self.read_phrases(rows))
-                    else:
-                        results.append((self.read_fields(rows), self.read_predicates(rows)))
+                    results.append(self.read_instance([line.split() for line in lines]))
                     lines = []
                     continue
                 lines.append(line)
         return results
+
+    def read_instance(self, rows):
+        return self.read_fields(rows)
 
     def read_files(self, path, extension):
         if os.path.isdir(path):
@@ -42,15 +37,57 @@ class ConllReader(object):
         else:
             return self.read_file(path)
 
+    def read_fields(self, rows):
+        sentence = defaultdict(list)
+        for row in rows:
+            for index, val in self._index_field_map.iteritems():
+                sentence[val].append(row[index])
+        return sentence
+
+
+class ConllSrlReader(ConllReader):
+    def __init__(self, index_field_map, pred_start, pred_end=0, phrase_index=None, pred_key="predicate"):
+        super(ConllSrlReader, self).__init__(index_field_map)
+        self._pred_start = pred_start
+        self._pred_end = pred_end
+        self._phrase_index = phrase_index
+        self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
+
+    def read_instance(self, rows):
+        if self._phrase_index:
+            return self.read_phrases(rows)
+        else:
+            return self.read_fields(rows), self.read_predicates(rows)
+
     def read_phrases(self, rows):
         phrases = []
         predicates = self.read_predicates(rows)
         chunk_preds = defaultdict(list)
-        for i, (index, phrase) in enumerate(ConllReader._read_chunks(rows, phrase_index=self._phrase_index)):
+        for i, (index, phrase) in enumerate(ConllSrlReader._read_chunks(rows, phrase_index=self._phrase_index)):
             phrases.append(self.read_fields(phrase))
             for pred_index, preds in predicates.items():
                 chunk_preds[pred_index].append(preds[index])
         return phrases, chunk_preds
+
+    def read_predicates(self, rows):
+        pred_indices = []
+        pred_cols = defaultdict(list)
+        for i, row in enumerate(rows):
+            predicate = row[self._pred_index]
+            if predicate is not "-":
+                pred_indices.append(i)
+            for index in range(self._pred_start, len(row) - self._pred_end):
+                pred_cols[index - self._pred_start].append(row[index])
+        # convert from CoNLL05 labels to IOB labels
+        for key, val in pred_cols.iteritems():
+            pred_cols[key] = ConllSrlReader._convert_to_iob(val)
+        # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
+        index = 0
+        predicates = {}
+        for i in pred_indices:
+            predicates[i] = pred_cols[index]
+            index += 1
+        return predicates
 
     @staticmethod
     def _read_chunks(rows, phrase_index):
@@ -74,33 +111,6 @@ class ConllReader(object):
             chunked_rows.append((index, curr_chunk))
         return chunked_rows
 
-    def read_predicates(self, rows):
-        pred_indices = []
-        pred_cols = defaultdict(list)
-        for i, row in enumerate(rows):
-            predicate = row[self._pred_index]
-            if predicate is not "-":
-                pred_indices.append(i)
-            for index in range(self._pred_start, len(row) - self._pred_end):
-                pred_cols[index - self._pred_start].append(row[index])
-        # convert from CoNLL05 labels to IOB labels
-        for key, val in pred_cols.iteritems():
-            pred_cols[key] = ConllReader._convert_to_iob(val)
-        # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
-        index = 0
-        predicates = {}
-        for i in pred_indices:
-            predicates[i] = pred_cols[index]
-            index += 1
-        return predicates
-
-    def read_fields(self, rows):
-        sentence = defaultdict(list)
-        for row in rows:
-            for index, val in self._index_field_map.iteritems():
-                sentence[val].append(row[index])
-        return sentence
-
     @staticmethod
     def _convert_to_iob(labels):
         def _get_label(_label):
@@ -123,19 +133,30 @@ class ConllReader(object):
         return results
 
 
-class Conll2005Reader(ConllReader):
+class Conll2003Reader(ConllReader):
+    def __init__(self, besio=False):
+        super(Conll2003Reader, self).__init__({0: "word", 1: "pos", 2: "chunk", 3: "ne"})
+        self.besio = besio
+
+    def read_instance(self, rows):
+        instance = super(Conll2003Reader, self).read_instance(rows)
+        instance['ne'] = chunk(instance['ne'], besio=self.besio)
+        return instance
+
+
+class Conll2005Reader(ConllSrlReader):
     def __init__(self):
         super(Conll2005Reader, self).__init__(
             {0: "id", 1: "pos", 2: "parse", 3: "word", 4: "ne", 5: "roleset", 6: "predicate"}, 7)
 
 
-class Conll2012Reader(ConllReader):
+class Conll2012Reader(ConllSrlReader):
     def __init__(self):
         super(Conll2012Reader, self).__init__(
             {3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"}, 11, 1)
 
 
-class ConllPhraseReader(ConllReader):
+class ConllPhraseReader(ConllSrlReader):
     def __init__(self):
         super(ConllPhraseReader, self).__init__(
             {0: "word", 1: "phrase", 2: "roleset", 3: "predicate"}, 4, phrase_index=1)

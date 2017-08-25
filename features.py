@@ -1,6 +1,7 @@
 import tensorflow as tf
+import numpy as np
 
-from srl_utils import read_json
+from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
 
 PAD_WORD = "<PAD>"
 UNKNOWN_WORD = "<UNK>"
@@ -210,3 +211,82 @@ class KeyFeatureExtractor(IdentityExtractor):
 class LowerCaseExtractor(KeyFeatureExtractor):
     def _apply(self, value):
         return super(LowerCaseExtractor, self)._apply(value).lower()
+
+
+class SequenceInstanceProcessor(object):
+    def __init__(self, feats):
+        """
+        Instance processor -- performs feature extraction.
+        :param feats: list of features
+        """
+        super(SequenceInstanceProcessor, self).__init__()
+        self.features = feats
+        self.extractors = {feat.name: feat.extractor for feat in self.features}
+        self.extractors[LABEL_KEY] = KeyFeatureExtractor(LABEL_KEY)
+        self.resources = {}
+
+    def extract(self, sentence):
+        instance = {}
+        for name, extractor in self.extractors.items():
+            if extractor.list_feature:
+                feats = [np.array(value, dtype=np.int32) for value in extractor.extract(sentence)]
+            else:
+                feats = np.array(extractor.extract(sentence), dtype=np.int32)
+            instance[name] = feats
+        instance[LENGTH_KEY] = instance[LABEL_KEY].shape[0]
+        return instance
+
+    def read_instances(self, sentences, train=False):
+        pass
+
+    def train(self, train=True):
+        """
+        Leave feature vocabularies fixed when extracting features.
+        :param train: if False, update feature vocabularies
+        """
+        for extractor in self.extractors.values():
+            extractor.train = train
+
+    def test(self):
+        """
+        When extracting features, update feature vocabularies.
+        """
+        self.train(False)
+
+    def save(self, out_path):
+        """
+        Serialize feature vocabularies and training resources such as vectors.
+        :param out_path:  path to vocabulary directory
+        """
+        for feature in self.features:
+            serialize(feature.extractor.indices, out_path, feature.name)
+        serialize(self.extractors[LABEL_KEY].indices, out_path, LABEL_KEY)
+        for feature in self.features:
+            if feature.initializer:
+                vectors, dim = self.resources[feature.name]
+                feature.embedding = initialize_vectors(vector_map=vectors, vocabulary=feature.extractor.indices, dim=dim)
+                feature.dim = dim
+                serialize(feature.embedding, out_path, feature.initializer['pkl_path'])
+
+    def load(self, in_path):
+        """
+        Load serialized vocabularies and training resources.
+        :param in_path: path to vocabulary directory
+        """
+        for feature in self.features:
+            feature.extractor.indices = deserialize(in_path, feature.name)
+            if feature.initializer:
+                feature.embedding = deserialize(in_path, feature.initializer['pkl_path'])
+                feature.dim = feature.embedding.shape[1]
+        self.extractors[LABEL_KEY].indices = deserialize(in_path, LABEL_KEY)
+
+    def _init_vocabularies(self):
+        for extractor in self.extractors.values():
+            extractor.train = True
+        for feature in self.features:
+            if feature.initializer:
+                path = feature.initializer['initializer_path']
+                vectors, dim = read_vectors(path, unk_word=UNKNOWN_WORD, pad_word=PAD_WORD)
+                self.resources[feature.name] = vectors, dim
+                feature.extractor.initialize_indices(vectors.keys())
+                feature.extractor.train = False
