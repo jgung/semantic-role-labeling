@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 
 START_OF_LABEL = "("
@@ -30,6 +31,16 @@ class ConllReader(object):
                     continue
                 lines.append(line)
         return results
+
+    def read_files(self, path, extension):
+        if os.path.isdir(path):
+            results = []
+            for input_file in os.listdir(path):
+                if input_file.endswith(extension):
+                    results.extend(self.read_file(os.path.join(path, input_file)))
+            return results
+        else:
+            return self.read_file(path)
 
     def read_phrases(self, rows):
         phrases = []

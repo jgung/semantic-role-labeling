@@ -10,18 +10,9 @@ from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.util import nest
 
+from features import LENGTH_KEY
 
-class ConvNet(object):
-    def __init__(self, window_size, input_dim, num_filters, max_length):
-        super(ConvNet, self).__init__()
-        self.window_size = window_size
-        self.input_dim = input_dim
-        self.num_filters = num_filters
-        self.max_length = max_length
-
-    def apply(self, feature):
-        return get_cnn_step(inputs=feature, input_dim=self.input_dim, seq_len=self.max_length, char_filters=self.num_filters,
-                            window_size=self.window_size)
+KEEP_PROB_KEY = "keep_prob"
 
 
 class DBLSTMTagger(object):
@@ -42,8 +33,8 @@ class DBLSTMTagger(object):
         self.saver = None
 
         self.feed_dict = {}
-        self.dropout_keep_prob = self._add_placeholder("keep_prob", tf.float32)
-        self.sequence_lengths = self._add_placeholder("lengths", tf.int32, [None])
+        self.dropout_keep_prob = self._add_placeholder(KEEP_PROB_KEY, tf.float32)
+        self.sequence_lengths = self._add_placeholder(LENGTH_KEY, tf.int32, [None])
 
     def _add_placeholder(self, name, dtype, shape=None):
         placeholder = tf.placeholder(dtype=dtype, shape=shape, name=name)
@@ -52,25 +43,25 @@ class DBLSTMTagger(object):
 
     def initialize_embeddings(self, sess):
         for feature in self.features:
-            if feature.initializer is not None:
+            if feature.embedding is not None:
                 placeholder = self._embedding_placeholder[feature.name]
                 init = self._embedding_init[feature.name]
-                sess.run(init, feed_dict={placeholder: feature.initializer})
+                sess.run(init, feed_dict={placeholder: feature.embedding})
 
     def embedding_layer(self):
         with tf.name_scope('embedding_layer'):
             inputs = []
             for feature in self.features:
                 embedding_matrix = tf.get_variable(name='{}_embedding_matrix'.format(feature.name),
-                                                   shape=[feature.vocab_size, feature.dim],
+                                                   shape=[feature.vocab_size(), feature.dim],
                                                    initializer=tf.random_normal_initializer(0, 0.01))
-                if feature.initializer is not None:
-                    self._embedding_placeholder[feature.name] = tf.placeholder(tf.float32, [feature.vocab_size, feature.dim])
+                if feature.embedding is not None:
+                    self._embedding_placeholder[feature.name] = tf.placeholder(tf.float32, [feature.vocab_size(), feature.dim])
                     self._embedding_init[feature.name] = embedding_matrix.assign(self._embedding_placeholder[feature.name])
-                shape = [None, None, None] if feature.subword else [None, None]
+                shape = [None, None, None] if feature.function else [None, None]
                 indices = self._add_placeholder(name=feature.name, dtype=tf.int32, shape=shape)
                 embedding = tf.nn.embedding_lookup(params=embedding_matrix, ids=indices, name='{}_embedding'.format(feature.name))
-                result = feature.function.apply(embedding)
+                result = embedding if not feature.function else feature.function.apply(embedding)
                 inputs.append(result)
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
@@ -182,24 +173,6 @@ class HighwayLSTMCell(LSTMCell):
 
         new_state = (LSTMStateTuple(c, m))
         return m, new_state
-
-
-def get_cnn_step(inputs, input_dim, seq_len, char_filters, window_size=2):
-    shape = tf.shape(inputs)
-    # flatten sequences for input
-    inputs = tf.reshape(inputs, shape=[-1, shape[-2], shape[-1], 1])
-    # convolution weights
-    conv_filter = tf.get_variable("conv_w", [window_size, input_dim, 1, char_filters],
-                                  initializer=tf.random_normal_initializer(0, 0.01))
-    conv_bias = tf.get_variable("conv_b", [char_filters], initializer=tf.zeros_initializer)
-    # convolution ops
-    conv = tf.nn.conv2d(input=inputs, filter=conv_filter, strides=[1, 1, 1, 1], padding="VALID")
-    relu = tf.nn.relu(tf.nn.bias_add(value=conv, bias=conv_bias))
-    pool = tf.nn.max_pool(value=relu, ksize=[1, seq_len - window_size + 1, 1, 1], strides=[1, 1, 1, 1],
-                          padding="VALID")
-    # unflatten
-    char_conv = tf.reshape(pool, shape=[-1, shape[1], char_filters])
-    return char_conv
 
 
 def linear_block_initialization(args, output_sizes, bias, bias_start=0.0):

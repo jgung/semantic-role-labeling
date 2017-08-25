@@ -26,6 +26,20 @@
         "name": "key",
         "key": "markers"
       }
+    },
+    {
+      "name": "chars",
+      "dim": 15,
+      "function": {
+        "name": "ConvNet",
+        "window_size": 2,
+        "num_filters": 32,
+        "max_length": 15
+      },
+      "extractor": {
+        "name": "chars",
+        "key": "word"
+      }
     }
   ]
 }

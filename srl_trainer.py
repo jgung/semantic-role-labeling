@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import random
 import subprocess
@@ -13,12 +12,16 @@ import tensorflow as tf
 from tensorflow.contrib.crf import viterbi_decode
 from tqdm import tqdm
 
-from feature import Feature
-from srl_data import PAD_INDEX
-from srl_data import load_instances
-from srl_data import load_model_files
+from features import LABEL_KEY, LENGTH_KEY, PAD_INDEX
+from features import get_features_from_config
+from srl_feature_extractor import MARKER_KEY
+from srl_feature_extractor import SrlFeatureExtractor
 from srl_reader import chunk
+from srl_utils import configure_logger
+from srl_utils import deserialize
+from srl_utils import read_json
 from tagger import DBLSTMTagger
+from tagger import KEEP_PROB_KEY
 
 FLAGS = None
 
@@ -29,75 +32,50 @@ class DeepSrlTrainer(object):
         self.save_path = flags.save
         self.load_path = flags.load
 
-        with open(flags.config, 'r') as config:
-            conf = json.load(config)
-            logging.info("%s" % conf)
-            self.max_epochs = conf['max_epochs']
-            self.batch_size = conf['batch_size']
-            self.keep_prob = conf['keep_prob']
-            self.lstm_hidden_dim = conf['lstm_hidden_dim']
-            self.lstm_num_layers = conf['lstm_num_layers']
-            self.max_length = conf['max_length']
-            self.num_buckets = conf['num_buckets']
+        self.script_path = flags.script
 
-            self.features = []
-            for feature in conf['features']:
-                name = feature['name']
-                dim = feature['dim']
-                vocab_size = feature['vocab_size']
-                initializer = feature.get('initializer')
-                func = feature.get('function')
-                subword = feature.get('subword')
-                self.features.append(Feature(name=name, dim=dim, vocab_size=vocab_size, initializer=initializer, subword=subword,
-                                             func=func))
+        self._read_conf(flags.config)
 
-        if flags.train:
-            self.training_iterator = SrlDataIterator(load_instances(flags.train), self.batch_size, features=self.features,
-                                                     num_buckets=self.num_buckets, max_length=self.max_length)
-        if flags.valid:
-            self.validation_iterator = SrlDataIterator(load_instances(flags.valid), self.batch_size, features=self.features)
-        if flags.test:
-            self.test_iterator = SrlDataIterator(load_instances(flags.test), self.batch_size, features=self.features)
-        self.vectors, self.word_vocab, self.label_vocab, self.char_vocab = load_model_files(flags.vocab)
+        extractor = SrlFeatureExtractor(feats=self.features)
+        extractor.load(flags.vocab)
+        self.marker_index = extractor.extractors[MARKER_KEY].indices['1']
 
-        self.reverse_word_vocab = [None] * len(self.word_vocab)
-        for key, val in self.word_vocab.iteritems():
-            self.reverse_word_vocab[val] = key
+        self.label_vocab = extractor.extractors[LABEL_KEY].indices
 
         self.reverse_label_vocab = [None] * len(self.label_vocab)
         for key, val in self.label_vocab.iteritems():
             self.reverse_label_vocab[val] = key
 
-        self.transition_params = create_transition_matrix(self.reverse_label_vocab)
+        self.transition_params = self._create_transition_matrix(self.reverse_label_vocab)
 
-        self.script_path = flags.script
+        if flags.train:
+            self.training_iterator = SrlDataIterator(deserialize(flags.train), self.batch_size, features=self.features,
+                                                     num_buckets=self.num_buckets, max_length=self.max_length)
+        if flags.valid:
+            self.validation_iterator = SrlDataIterator(deserialize(flags.valid), self.batch_size, features=self.features)
+        if flags.test:
+            self.test_iterator = SrlDataIterator(deserialize(flags.test), self.batch_size, features=self.features)
 
-        for feature in self.features:
-            if feature.name == 'words':
-                feature.vocab_size = len(self.word_vocab)
-                feature.dim = self.vectors.shape[1]
-                feature.initializer = self.vectors
+    def _read_conf(self, conf_json):
+        conf = read_json(conf_json)
+        logging.info(conf)
+        self.max_epochs = conf['max_epochs']
+        self.batch_size = conf['batch_size']
+        self.keep_prob = conf['keep_prob']
+        self.lstm_hidden_dim = conf['lstm_hidden_dim']
+        self.lstm_num_layers = conf['lstm_num_layers']
+        self.max_length = conf['max_length']
+        self.num_buckets = conf['num_buckets']
+        self.features = get_features_from_config(conf_json)
 
     def _load_graph(self):
         return DBLSTMTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
                             state_dim=self.lstm_hidden_dim)
 
-    def get_weights(self, variable="softmax_W", labels=None):
-        with tf.Session() as sess:
-            graph = self._load_graph()
-            graph.test()
-            graph.saver.restore(sess, self.load_path)
-            softmax_w = [v for v in tf.global_variables() if variable in v.name][0]
-            weights = softmax_w.eval().transpose()
-            if labels and len(labels) == weights.shape[0]:
-                for label, weight in zip(labels, weights):
-                    print("{} {}".format(label, " ".join(["%.5f" % x for x in weight])))
-
     def train(self):
         with tf.Session() as sess:
             graph = self._load_graph()
             graph.train()
-            # tf.summary.FileWriter('data/logs/', sess.graph)
             if self.load_path:
                 graph.saver.restore(sess, self.load_path)
             else:
@@ -112,10 +90,10 @@ class DeepSrlTrainer(object):
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
                         feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                        feed[graph.feed_dict['keep_prob']] = self.keep_prob
+                        feed[graph.feed_dict[KEEP_PROB_KEY]] = self.keep_prob
                         sess.run(graph.train_step, feed_dict=feed)
                         step += 1
-                        bar.update(len(batch['labels']))
+                        bar.update(len(batch[LABEL_KEY]))
                 logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
 
                 score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
@@ -144,16 +122,16 @@ class DeepSrlTrainer(object):
         with tqdm(total=iterator.size, leave=False, unit=' instances') as bar:
             for batch in iterator.epoch():
                 feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                feed[graph.feed_dict['keep_prob']] = 1.0
+                feed[graph.feed_dict[KEEP_PROB_KEY]] = 1.0
                 logits = sess.run(graph.scores, feed_dict=feed)
 
-                gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch['labels'], batch['lengths'])])
+                gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], batch[LENGTH_KEY])])
                 pred_ys.extend(
                     [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
-                     (pred, stop) in zip(logits, batch['lengths'])])
+                     (pred, stop) in zip(logits, batch[LENGTH_KEY])])
                 words.extend(batch['words'])
-                indices.extend(batch['markers'])
-                bar.update(len(batch['labels']))
+                indices.extend(batch[MARKER_KEY])
+                bar.update(len(batch[LABEL_KEY]))
         logging.info('Evaluation completed in %d seconds.', time.time() - then)
         return self.evaluate(words, pred_ys, gold_ys, indices)
 
@@ -170,33 +148,32 @@ class DeepSrlTrainer(object):
             line = ''
             for word, predicted, marker in zip(
                     words, chunk([self.reverse_label_vocab[l] for l in labels], conll=True), markers):
-                line += '{} {}\n'.format(marker == 1 and word or '-', predicted)
+                line += '{} {}\n'.format(marker == self.marker_index and word or '-', predicted)
             output_file.write(line + '\n')
         output_file.flush()
         output_file.seek(0)
 
-
-def create_transition_matrix(labels):
-    num_tags = len(labels)
-    transition_params = np.zeros([num_tags, num_tags], dtype=np.float32)
-    for i, prev_label in enumerate(labels):
-        for j, label in enumerate(labels):
-            if i != j and label[0] == 'I' and not prev_label == 'B' + label[1:]:
-                transition_params[i, j] = np.NINF
-    return transition_params
+    @staticmethod
+    def _create_transition_matrix(labels):
+        num_tags = len(labels)
+        transition_params = np.zeros([num_tags, num_tags], dtype=np.float32)
+        for i, prev_label in enumerate(labels):
+            for j, label in enumerate(labels):
+                if i != j and label[0] == 'I' and not prev_label == 'B' + label[1:]:
+                    transition_params[i, j] = np.NINF
+        return transition_params
 
 
 class SrlDataIterator(object):
-    def __init__(self, data, batch_size, features, pad_index=PAD_INDEX, num_buckets=5, max_length=99999):
+    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999):
         super(SrlDataIterator, self).__init__()
         self.num_buckets = num_buckets
-        self.pad_index = pad_index
         self.batch_size = batch_size
         self.size = len(data)
         self.features = features
 
-        data = [x for x in data if x['length'] <= max_length]
-        data.sort(key=lambda inst: inst['length'])
+        data = [x for x in data if x[LENGTH_KEY] <= max_length]
+        data.sort(key=lambda inst: inst[LENGTH_KEY])
         self.bucket_size = self.size / num_buckets
         self.data = []
         for bucket in range(num_buckets):
@@ -227,27 +204,29 @@ class SrlDataIterator(object):
             self.pointer[i] = 0
 
     def _prepare_batch(self, batch):
-        lengths = [instance['length'] for instance in batch]
+        lengths = [instance[LENGTH_KEY] for instance in batch]
         max_length = max(lengths)
-        labels = self._pad_vals('labels', batch, max_length)
-        feed_dict = {'labels': labels, 'lengths': lengths}
+        labels = self._pad_vals(LABEL_KEY, batch, max_length)
+        feed_dict = {LABEL_KEY: labels, LENGTH_KEY: lengths}
         for feature in self.features:
-            if not feature.subword:
+            if not feature.function:
                 feed_dict[feature.name] = self._pad_vals(feature.name, batch, max_length)
             else:
-                feed_dict[feature.name] = self._pad_list_feature(feature.name, batch, max_length, feature.max_len)
+                feed_dict[feature.name] = self._pad_list_feature(feature.name, batch, max_length, feature.function.max_length)
         return feed_dict
 
-    def _pad_vals(self, key, batch, maxlen):
+    @staticmethod
+    def _pad_vals(key, batch, maxlen):
         padded = np.empty([len(batch), maxlen], dtype=np.int32)
-        padded.fill(self.pad_index)
+        padded.fill(PAD_INDEX)
         for i, sentence in enumerate(padded):
-            sentence[:batch[i]['length']] = batch[i][key]
+            sentence[:batch[i][LENGTH_KEY]] = batch[i][key]
         return padded
 
-    def _pad_list_feature(self, key, batch, maxlen, max_feat_length):
+    @staticmethod
+    def _pad_list_feature(key, batch, maxlen, max_feat_length):
         padded = np.empty([len(batch), maxlen, max_feat_length], dtype=np.int32)
-        padded.fill(self.pad_index)
+        padded.fill(PAD_INDEX)
         for i, sentence in enumerate(padded):
             features = batch[i][key]
             for index, word in enumerate(features):
@@ -256,26 +235,11 @@ class SrlDataIterator(object):
 
 
 def main(_):
-    log_formatter = logging.Formatter("%(asctime)s [%(levelname)-5.5s] %(message)s", datefmt='%m/%d/%Y %I:%M:%S %p')
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-
-    file_handler = logging.FileHandler(FLAGS.log)
-    file_handler.setFormatter(log_formatter)
-    root_logger.addHandler(file_handler)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-    root_logger.addHandler(console_handler)
-
+    configure_logger(FLAGS.log)
     srl_trainer = DeepSrlTrainer(FLAGS)
-
-    if FLAGS.load:
-        srl_trainer.get_weights(labels=srl_trainer.reverse_label_vocab)
     if FLAGS.train:
         if not FLAGS.valid:
-            logging.warn('Missing required validation (dev) set. Use "--valid path/to/valid.pkl" to specify validation data.')
-            return
+            raise ValueError('Missing required validation (dev) set. Use "--valid path/to/valid.pkl" to specify validation data.')
         srl_trainer.train()
     if FLAGS.test:
         srl_trainer.test()
