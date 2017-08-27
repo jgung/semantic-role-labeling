@@ -108,7 +108,7 @@ class DBLSTMTagger(object):
                 self.loss = tf.reduce_mean(losses)
 
         with tf.name_scope('train'):
-            optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+            optimizer = tf.train.AdadeltaOptimizer(learning_rate=1, epsilon=1e-6)
             gradients, variables = zip(*optimizer.compute_gradients(self.loss))
             gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
             self.train_step = optimizer.apply_gradients(zip(gradients, variables))

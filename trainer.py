@@ -95,7 +95,7 @@ class TaggerTrainer(object):
     def _read_conf(self, conf_json):
         conf = read_json(conf_json)
         logging.info(conf)
-        self.crf = conf['crf']
+        self.crf = conf.get('crf')
         self.max_epochs = conf['max_epochs']
         self.batch_size = conf['batch_size']
         self.keep_prob = conf['keep_prob']
