@@ -5,8 +5,13 @@ from srl_utils import read_json, serialize, initialize_vectors, deserialize, rea
 
 PAD_WORD = "<PAD>"
 UNKNOWN_WORD = "<UNK>"
+START_WORD = "<BOS>"
+END_WORD = "<EOS>"
 PAD_INDEX = 0
 UNKNOWN_INDEX = 1
+START_INDEX = 2
+END_INDEX = 3
+
 LABEL_KEY = "labels"
 LENGTH_KEY = "lengths"
 
@@ -28,6 +33,7 @@ class Feature(object):
         self.initializer = initializer
         self.function = func
         self.embedding = None
+        self.pad_index = PAD_INDEX
 
     def vocab_size(self):
         return len(self.extractor.indices)
@@ -96,12 +102,15 @@ class ConvNet(object):
 
 
 class FeatureExtractor(object):
-    def __init__(self, train=False, indices=None):
+    def __init__(self, train=False, indices=None, unknown_word=UNKNOWN_WORD):
         super(FeatureExtractor, self).__init__()
         self.train = train
         self.indices = indices
-        if not self.indices:
-            self.indices = {PAD_WORD: 0, UNKNOWN_WORD: 1}
+        if self.indices is None:
+            self.indices = {PAD_WORD: 0, UNKNOWN_WORD: 1, START_WORD: 2, END_WORD: 3}
+        if unknown_word not in self.indices:
+            # noinspection PyTypeChecker
+            self.indices[unknown_word] = len(self.indices)
         self.list_feature = False
 
     def initialize_indices(self, values):
@@ -119,7 +128,7 @@ class FeatureExtractor(object):
         for value in self._get_values(sequence):
             result = self._apply(value)
             index = self.indices.get(result)
-            if not index:
+            if index is None:
                 if self.train:
                     index = len(self.indices)
                     self.indices[result] = index
@@ -153,8 +162,8 @@ class IdentityExtractor(FeatureExtractor):
 
 
 class ListFeatureExtractor(FeatureExtractor):
-    def __init__(self, train=False, indices=None):
-        super(ListFeatureExtractor, self).__init__(train, indices)
+    def __init__(self, train=False, indices=None, unknown_word=UNKNOWN_WORD):
+        super(ListFeatureExtractor, self).__init__(train, indices, unknown_word)
         self.list_feature = True
 
     def initialize_indices(self, values):
@@ -167,7 +176,7 @@ class ListFeatureExtractor(FeatureExtractor):
             indices = []
             for result in results:
                 index = self.indices.get(result)
-                if not index and self.train:
+                if index is None and self.train:
                     if self.train:
                         index = len(self.indices)
                         self.indices[result] = index
@@ -185,8 +194,8 @@ class ListFeatureExtractor(FeatureExtractor):
 
 
 class CharacterFeatureFunction(ListFeatureExtractor):
-    def __init__(self, key, train=False, indices=None):
-        super(CharacterFeatureFunction, self).__init__(train, indices)
+    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD):
+        super(CharacterFeatureFunction, self).__init__(train, indices, unknown_word)
         self.key = key
 
     def _apply(self, value):
@@ -197,8 +206,8 @@ class CharacterFeatureFunction(ListFeatureExtractor):
 
 
 class KeyFeatureExtractor(IdentityExtractor):
-    def __init__(self, key, train=False, indices=None):
-        super(KeyFeatureExtractor, self).__init__(train, indices)
+    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD):
+        super(KeyFeatureExtractor, self).__init__(train, indices, unknown_word)
         self.key = key
 
     def _get_values(self, sequence):
@@ -222,7 +231,7 @@ class SequenceInstanceProcessor(object):
         super(SequenceInstanceProcessor, self).__init__()
         self.features = feats
         self.extractors = {feat.name: feat.extractor for feat in self.features}
-        self.extractors[LABEL_KEY] = KeyFeatureExtractor(LABEL_KEY)
+        self.extractors[LABEL_KEY] = KeyFeatureExtractor(LABEL_KEY, indices={}, unknown_word='O')
         self.resources = {}
 
     def extract(self, sentence):

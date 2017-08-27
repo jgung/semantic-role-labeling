@@ -9,6 +9,7 @@ from srl_utils import serialize
 class NerFeatureExtractor(features.SequenceInstanceProcessor):
     def __init__(self, feats):
         super(NerFeatureExtractor, self).__init__(feats)
+        self.extractors[LABEL_KEY] = features.KeyFeatureExtractor(key=LABEL_KEY, indices={}, unknown_word='O')
 
     def read_instances(self, sentences, train=False):
         """

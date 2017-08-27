@@ -31,6 +31,8 @@ def read_vectors(path, unk_word=None, pad_word=None, max_vecs=1000000):
 def initialize_vectors(vector_map, vocabulary, dim):
     emb = np.zeros([len(vocabulary), dim], dtype=np.float32)
     for word, index in vocabulary.items():
+        if word not in vector_map:
+            vector_map[word] = np.random.normal(0, 0.01, dim)
         emb[index] = vector_map[word]
     return emb
 

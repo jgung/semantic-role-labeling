@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from features import LABEL_KEY, LENGTH_KEY
+from features import LABEL_KEY, LENGTH_KEY, END_INDEX, START_INDEX
 from features import PAD_INDEX
 from features import get_features_from_config
 from srl_utils import deserialize
@@ -120,13 +120,14 @@ class TaggerTrainer(object):
 
 
 class BatchIterator(object):
-    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False):
+    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False, lr_pad=2):
         super(BatchIterator, self).__init__()
         self.num_buckets = num_buckets
         self.batch_size = batch_size
         self.size = len(data)
         self.features = features
         self.end_pad = 1 if end_pad else 0
+        self.lr_pad = lr_pad
 
         data = [x for x in data if x[LENGTH_KEY] <= max_length]
         data.sort(key=lambda inst: inst[LENGTH_KEY])
@@ -165,7 +166,7 @@ class BatchIterator(object):
         labels = self._pad_vals(LABEL_KEY, batch, max_length)
         feed_dict = {LABEL_KEY: labels, LENGTH_KEY: lengths}
         for feature in self.features:
-            if not feature.function:
+            if feature.function is None:
                 feed_dict[feature.name] = self._pad_vals(feature.name, batch, max_length)
             else:
                 feed_dict[feature.name] = self._pad_list_feature(feature.name, batch, max_length, feature.function.max_length)
@@ -179,12 +180,14 @@ class BatchIterator(object):
             sentence[:batch[i][LENGTH_KEY]] = batch[i][key]
         return padded
 
-    @staticmethod
-    def _pad_list_feature(key, batch, maxlen, max_feat_length):
+    def _pad_list_feature(self, key, batch, maxlen, max_feat_length):
         padded = np.empty([len(batch), maxlen, max_feat_length], dtype=np.int32)
         padded.fill(PAD_INDEX)
         for i, sentence in enumerate(padded):
             features = batch[i][key]
             for index, word in enumerate(features):
-                sentence[index, :word.size] = word[:max_feat_length]
+                sentence[index, 0:self.lr_pad] = START_INDEX
+                sentence[index, self.lr_pad:word.size + self.lr_pad] = word[:max_feat_length - self.lr_pad]
+                end_word = word.size + self.lr_pad
+                sentence[index, end_word:end_word + self.lr_pad] = END_INDEX
         return padded
