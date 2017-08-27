@@ -38,11 +38,12 @@ class TaggerTrainer(object):
 
         if flags.train:
             self.training_iterator = BatchIterator(deserialize(flags.train), self.batch_size, features=self.features,
-                                                   num_buckets=self.num_buckets, max_length=self.max_length)
+                                                   num_buckets=self.num_buckets, max_length=self.max_length, end_pad=self.crf)
         if flags.valid:
-            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, features=self.features)
+            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, features=self.features,
+                                                     end_pad=self.crf)
         if flags.test:
-            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, features=self.features)
+            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, features=self.features, end_pad=self.crf)
 
     def train(self):
         with tf.Session() as sess:
@@ -94,6 +95,7 @@ class TaggerTrainer(object):
     def _read_conf(self, conf_json):
         conf = read_json(conf_json)
         logging.info(conf)
+        self.crf = conf['crf']
         self.max_epochs = conf['max_epochs']
         self.batch_size = conf['batch_size']
         self.keep_prob = conf['keep_prob']
@@ -104,7 +106,7 @@ class TaggerTrainer(object):
 
     def _load_graph(self):
         return DBLSTMTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
-                            state_dim=self.lstm_hidden_dim)
+                            state_dim=self.lstm_hidden_dim, transition_params=self.transition_params, crf=self.crf)
 
     @staticmethod
     def _create_transition_matrix(labels):
@@ -118,12 +120,13 @@ class TaggerTrainer(object):
 
 
 class BatchIterator(object):
-    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999):
+    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False):
         super(BatchIterator, self).__init__()
         self.num_buckets = num_buckets
         self.batch_size = batch_size
         self.size = len(data)
         self.features = features
+        self.end_pad = 1 if end_pad else 0
 
         data = [x for x in data if x[LENGTH_KEY] <= max_length]
         data.sort(key=lambda inst: inst[LENGTH_KEY])
@@ -157,8 +160,8 @@ class BatchIterator(object):
             self.pointer[i] = 0
 
     def _prepare_batch(self, batch):
-        lengths = [instance[LENGTH_KEY] for instance in batch]
-        max_length = max(lengths)
+        lengths = [instance[LENGTH_KEY] + self.end_pad for instance in batch]
+        max_length = max(lengths)  # minimum length 2 due to https://github.com/tensorflow/tensorflow/issues/7751
         labels = self._pad_vals(LABEL_KEY, batch, max_length)
         feed_dict = {LABEL_KEY: labels, LENGTH_KEY: lengths}
         for feature in self.features:

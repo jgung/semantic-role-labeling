@@ -1,18 +1,19 @@
 {
   "max_epochs": 500,
-  "batch_size": 80,
-  "keep_prob": 0.9,
+  "batch_size": 10,
+  "keep_prob": 0.5,
   "max_length": 100,
   "num_buckets": 100,
   "lstm_num_layers": 4,
-  "lstm_hidden_dim": 300,
+  "lstm_hidden_dim": 200,
+  "crf": false,
   "features": [
     {
       "name": "words",
       "dim": -1,
       "initializer": {
         "pkl_path": "vectors.pkl",
-        "initializer_path": "data/vectors/senna.txt"
+        "initializer_path": "data/vectors/glove.6B.100d.txt"
       },
       "extractor": {
         "name": "lower",
@@ -21,12 +22,12 @@
     },
     {
       "name": "chars",
-      "dim": 15,
+      "dim": 30,
       "function": {
         "name": "ConvNet",
-        "window_size": 2,
-        "num_filters": 32,
-        "max_length": 15
+        "window_size": 3,
+        "num_filters": 30,
+        "max_length": 30
       },
       "extractor": {
         "name": "chars",

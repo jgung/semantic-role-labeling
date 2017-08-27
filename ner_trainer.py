@@ -31,10 +31,10 @@ class DeepNerTrainer(TaggerTrainer):
                 feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
                 feed[graph.feed_dict[KEEP_PROB_KEY]] = 1.0
                 logits = sess.run(graph.scores, feed_dict=feed)
-                gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], batch[LENGTH_KEY])])
-                pred_ys.extend(
-                    [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
-                     (pred, stop) in zip(logits, batch[LENGTH_KEY])])
+                lengths = [l - 1 for l in batch[LENGTH_KEY]] if self.crf else batch[LENGTH_KEY]  # remove padding before eval
+                gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], lengths)])
+                pred_ys.extend([viterbi_decode(score=pred[:stop], transition_params=graph.transition_matrix())[0] for
+                                (pred, stop) in zip(logits, lengths)])
                 bar.update(len(batch[LABEL_KEY]))
         logging.info('Evaluation completed in %d seconds.', time.time() - then)
         return self.evaluate(pred_ys, gold_ys)

@@ -9,20 +9,22 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.util import nest
-
+from tensorflow.contrib.crf import crf_log_likelihood
 from features import LENGTH_KEY
 
 KEEP_PROB_KEY = "keep_prob"
 
 
 class DBLSTMTagger(object):
-    def __init__(self, features, num_layers, state_dim, num_classes):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
         self.num_layers = num_layers
         self.state_dim = state_dim
         self.num_classes = num_classes
+        self.crf = crf
+        self.transition_params = transition_params
 
         self._embedding_placeholder = {}
         self._embedding_init = {}
@@ -35,6 +37,11 @@ class DBLSTMTagger(object):
         self.feed_dict = {}
         self.dropout_keep_prob = self._add_placeholder(KEEP_PROB_KEY, tf.float32)
         self.sequence_lengths = self._add_placeholder(LENGTH_KEY, tf.int32, [None])
+
+    def transition_matrix(self):
+        if self.crf:
+            return self.transition_params.eval()
+        return self.transition_params
 
     def _add_placeholder(self, name, dtype, shape=None):
         placeholder = tf.placeholder(dtype=dtype, shape=shape, name=name)
@@ -88,11 +95,15 @@ class DBLSTMTagger(object):
             self.scores = tf.reshape(logits, [-1, time_steps, self.num_classes], name="unflatten_logits")
 
     def add_train_ops(self):
-        with tf.name_scope('cross_entropy'):
+        with tf.name_scope('loss_ops'):
             labels = self._add_placeholder("labels", tf.int32, [None, None])
-            losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.scores, labels=labels)
-            mask = tf.sequence_mask(self.sequence_lengths, name="padding_mask")
-            losses = tf.boolean_mask(losses, mask, name="remove_padding")
+            if self.crf:
+                log_likelihood, self.transition_params = crf_log_likelihood(self.scores, labels, self.sequence_lengths)
+                losses = -log_likelihood
+            else:
+                losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.scores, labels=labels)
+                mask = tf.sequence_mask(self.sequence_lengths, name="padding_mask")
+                losses = tf.boolean_mask(losses, mask, name="remove_padding")
             with tf.name_scope('total'):
                 self.loss = tf.reduce_mean(losses)
 

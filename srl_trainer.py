@@ -36,7 +36,7 @@ class DeepSrlTrainer(TaggerTrainer):
 
                 gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], batch[LENGTH_KEY])])
                 pred_ys.extend(
-                    [viterbi_decode(score=pred[:stop], transition_params=self.transition_params)[0] for
+                    [viterbi_decode(score=pred[:stop], transition_params=graph.transition_matrix())[0] for
                      (pred, stop) in zip(logits, batch[LENGTH_KEY])])
                 words.extend(batch['words'])
                 indices.extend(batch[MARKER_KEY])
