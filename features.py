@@ -33,7 +33,6 @@ class Feature(object):
         self.initializer = initializer
         self.function = func
         self.embedding = None
-        self.pad_index = PAD_INDEX
 
     def vocab_size(self):
         return len(self.extractor.indices)
@@ -112,6 +111,7 @@ class FeatureExtractor(object):
             # noinspection PyTypeChecker
             self.indices[unknown_word] = len(self.indices)
         self.list_feature = False
+        self.unknown_word = unknown_word
 
     def initialize_indices(self, values):
         for value in values:
@@ -295,7 +295,7 @@ class SequenceInstanceProcessor(object):
         for feature in self.features:
             if feature.initializer:
                 path = feature.initializer['initializer_path']
-                vectors, dim = read_vectors(path, unk_word=UNKNOWN_WORD, pad_word=PAD_WORD)
+                vectors, dim = read_vectors(path, unk_word=feature.extractor.unknown_word, pad_word=PAD_WORD)
                 self.resources[feature.name] = vectors, dim
                 feature.extractor.initialize_indices(vectors.keys())
                 feature.extractor.train = False
