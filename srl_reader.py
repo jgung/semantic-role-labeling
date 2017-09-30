@@ -22,6 +22,8 @@ class ConllReader(object):
                     lines = []
                     continue
                 lines.append(line)
+            if lines:
+                results.append(self.read_instance([line.split() for line in lines]))
         return results
 
     def read_instance(self, rows):
@@ -30,7 +32,7 @@ class ConllReader(object):
     def read_files(self, path, extension):
         if os.path.isdir(path):
             results = []
-            for input_file in os.listdir(path):
+            for input_file in sorted(os.listdir(path)):
                 if input_file.endswith(extension):
                     results.extend(self.read_file(os.path.join(path, input_file)))
             return results
