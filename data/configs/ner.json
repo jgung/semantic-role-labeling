@@ -4,9 +4,10 @@
   "keep_prob": 0.5,
   "max_length": 100,
   "num_buckets": 100,
-  "lstm_num_layers": 4,
+  "lstm_num_layers": 1,
   "lstm_hidden_dim": 200,
-  "crf": false,
+  "crf": true,
+  "dblstm": false,
   "features": [
     {
       "name": "words",

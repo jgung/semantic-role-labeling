@@ -1,6 +1,6 @@
 import tensorflow as tf
+import math
 from tensorflow.contrib.rnn import DropoutWrapper
-from tensorflow.contrib.rnn import LSTMCell
 from tensorflow.contrib.rnn import LSTMStateTuple
 # noinspection PyProtectedMember
 from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import _checked_scope
@@ -10,21 +10,23 @@ from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.util import nest
 from tensorflow.contrib.crf import crf_log_likelihood
+from tensorflow.contrib.rnn import LSTMCell
 from features import LENGTH_KEY
 
 KEEP_PROB_KEY = "keep_prob"
 
 
 class DBLSTMTagger(object):
-    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
         self.num_layers = num_layers
         self.state_dim = state_dim
         self.num_classes = num_classes
-        self.crf = crf
         self.transition_params = transition_params
+        self.crf = crf
+        self.dblstm = dblstm
 
         self._embedding_placeholder = {}
         self._embedding_init = {}
@@ -77,18 +79,31 @@ class DBLSTMTagger(object):
                               variational_recurrent=True, dtype=tf.float32, output_keep_prob=self.dropout_keep_prob)
 
     def inference_layer(self, inputs):
-        with tf.name_scope('deep_bidirectional_rnn'):
-            rnn_outputs, _ = deep_bidirectional_dynamic_rnn(
-                [self._dblstm_cell() for _ in range(self.num_layers)],
-                inputs, sequence_length=self.sequence_lengths, dtype=tf.float32)
+        if self.dblstm:
+            with tf.name_scope('deep_bidirectional_rnn'):
+                rnn_outputs, _ = deep_bidirectional_dynamic_rnn(
+                    [self._dblstm_cell() for _ in range(self.num_layers)],
+                    inputs, sequence_length=self.sequence_lengths, dtype=tf.float32)
+            state_dim = self.state_dim
+        else:
+            cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim), input_keep_prob=self.dropout_keep_prob,
+                                     output_keep_prob=self.dropout_keep_prob)
+            cell_bw = DropoutWrapper(LSTMCell(num_units=self.state_dim), input_keep_prob=self.dropout_keep_prob,
+                                     output_keep_prob=self.dropout_keep_prob)
+
+            with tf.name_scope('bidirectional_rnn'):
+                rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, inputs, sequence_length=self.sequence_lengths,
+                                                                 dtype=tf.float32)
+                rnn_outputs = tf.concat(rnn_outputs, 2)
+                state_dim = self.state_dim * 2
 
         with tf.name_scope('linear_projection'):
-            softmax_weights = tf.get_variable('softmax_W', [self.state_dim, self.num_classes],
+            softmax_weights = tf.get_variable('softmax_W', [state_dim, self.num_classes],
                                               initializer=tf.random_normal_initializer(0, 0.01))
             softmax_bias = tf.get_variable('softmax_b', [self.num_classes], initializer=tf.constant_initializer(0.0))
 
             time_steps = tf.shape(rnn_outputs)[1]
-            rnn_outputs = tf.reshape(rnn_outputs, [-1, self.state_dim],
+            rnn_outputs = tf.reshape(rnn_outputs, [-1, state_dim],
                                      name="flatten_rnn_outputs_for_linear_projection")
             logits = tf.nn.xw_plus_b(x=rnn_outputs, weights=softmax_weights, biases=softmax_bias,
                                      name="softmax_projection")
