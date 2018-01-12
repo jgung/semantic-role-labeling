@@ -1,16 +1,12 @@
 import tensorflow as tf
-import math
-from tensorflow.contrib.rnn import DropoutWrapper
-from tensorflow.contrib.rnn import LSTMStateTuple
-# noinspection PyProtectedMember
-from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import _checked_scope
-# noinspection PyProtectedMember
+from tensorflow.contrib.crf import crf_log_likelihood
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.util import nest
-from tensorflow.contrib.crf import crf_log_likelihood
-from tensorflow.contrib.rnn import LSTMCell
+from tensorflow.python.ops.rnn_cell import LSTMCell
+from tensorflow.python.ops.rnn_cell import DropoutWrapper
+from tensorflow.python.ops.rnn_cell import LSTMStateTuple
 from features import LENGTH_KEY
 
 KEEP_PROB_KEY = "keep_prob"
@@ -81,9 +77,8 @@ class DBLSTMTagger(object):
     def inference_layer(self, inputs):
         if self.dblstm:
             with tf.name_scope('deep_bidirectional_rnn'):
-                rnn_outputs, _ = deep_bidirectional_dynamic_rnn(
-                    [self._dblstm_cell() for _ in range(self.num_layers)],
-                    inputs, sequence_length=self.sequence_lengths, dtype=tf.float32)
+                rnn_outputs, _ = deep_bidirectional_dynamic_rnn([self._dblstm_cell() for _ in range(self.num_layers)], inputs,
+                                                                sequence_length=self.sequence_lengths)
             state_dim = self.state_dim
         else:
             cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim), input_keep_prob=self.dropout_keep_prob,
@@ -140,46 +135,37 @@ class DBLSTMTagger(object):
         self.saver = tf.train.Saver()
 
 
-def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length, dtype=None):
-    def _reverse(input_, seq_lengths, seq_dim=1, batch_dimension=0):
-        return array_ops.reverse_sequence(
-            input=input_, seq_lengths=seq_lengths,
-            seq_dim=seq_dim, batch_dim=batch_dimension)
-
+def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
+    def _reverse(input_, seq_lengths):
+        return array_ops.reverse_sequence(input=input_, seq_lengths=seq_lengths, seq_dim=1, batch_dim=0)
     outputs, state = None, None
     with vs.variable_scope("dblstm"):
         for i, cell in enumerate(cells):
             if i % 2 == 1:
-                with vs.variable_scope("dblstm-bw-%s" % (i / 2)) as bw_scope:
+                with vs.variable_scope("bw-%s" % (i / 2)) as bw_scope:
                     inputs_reverse = _reverse(inputs, seq_lengths=sequence_length)
-                    outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs_reverse,
-                                                       sequence_length=sequence_length,
-                                                       initial_state=None, dtype=dtype, scope=bw_scope)
+                    outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs_reverse, sequence_length=sequence_length,
+                                                       dtype=tf.float32, scope=bw_scope)
                     outputs = _reverse(outputs, seq_lengths=sequence_length)
             else:
-                with vs.variable_scope("dblstm-fw-%s" % (i / 2)) as fw_scope:
-                    outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs,
-                                                       sequence_length=sequence_length,
-                                                       initial_state=None, dtype=dtype,
-                                                       scope=fw_scope)
+                with vs.variable_scope("fw-%s" % (i / 2)) as fw_scope:
+                    outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=sequence_length,
+                                                       dtype=tf.float32, scope=fw_scope)
             inputs = outputs
     return outputs, state
 
 
 class HighwayLSTMCell(LSTMCell):
-    def __init__(self, num_units, input_size=None, initializer=None, forget_bias=1.0,
-                 activation=tf.nn.tanh, reuse=None):
-        super(HighwayLSTMCell, self).__init__(num_units=num_units, input_size=input_size, cell_clip=None,
-                                              initializer=initializer, forget_bias=forget_bias, activation=activation,
-                                              reuse=reuse)
+    def __init__(self, num_units, initializer=None):
+        super(HighwayLSTMCell, self).__init__(num_units=num_units, initializer=initializer)
 
-    def __call__(self, inputs, state, scope=None):
+    def call(self, inputs, state):
         (c_prev, m_prev) = state
 
         input_size = inputs.get_shape().with_rank(2)[1]
         if input_size.value is None:
             raise ValueError("Could not infer input size from inputs.get_shape()[-1]")
-        with _checked_scope(self, scope or "highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
+        with vs.variable_scope(self, "highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
             # i = input_gate, j = new_input, f = forget_gate, o = output_gate, r = transform_gate
             with vs.variable_scope('hidden_weights'):
                 hidden_matrix = linear_block_initialization(m_prev, 5 * [self._num_units], bias=False)
@@ -201,31 +187,22 @@ class HighwayLSTMCell(LSTMCell):
         return m, new_state
 
 
-def linear_block_initialization(args, output_sizes, bias, bias_start=0.0):
-    if args is None or (nest.is_sequence(args) and not args):
-        raise ValueError("`args` must be specified")
+def linear_block_initialization(args, output_sizes, bias):
     if not nest.is_sequence(args):
         args = [args]
-
     # Calculate the total size of arguments on dimension 1.
     total_arg_size = 0
     shapes = [a.get_shape() for a in args]
     for shape in shapes:
-        if shape.ndims != 2:
-            raise ValueError("linear is expecting 2D arguments: %s" % shapes)
-        if shape[1].value is None:
-            raise ValueError("linear expects shape[1] to be provided for shape %s, "
-                             "but saw %s" % (shape, shape[1]))
-        else:
-            total_arg_size += shape[1].value
+        total_arg_size += shape[1].value
 
     dtype = [a.dtype for a in args][0]
 
     # Now the computation.
     scope = vs.get_variable_scope()
     with vs.variable_scope(scope) as outer_scope:
-        weights = tf.concat([vs.get_variable("weights_{}".format(i), [total_arg_size, size],
-                                             dtype=dtype) for i, size in enumerate(output_sizes)], axis=1)
+        weights = tf.concat([vs.get_variable("weights_{}".format(i), [total_arg_size, size], dtype=dtype)
+                             for i, size in enumerate(output_sizes)], axis=1)
         if len(args) == 1:
             res = tf.matmul(args[0], weights)
         else:
@@ -234,8 +211,6 @@ def linear_block_initialization(args, output_sizes, bias, bias_start=0.0):
             return res
         with vs.variable_scope(outer_scope) as inner_scope:
             inner_scope.set_partitioner(None)
-            biases = vs.get_variable(
-                "biases", [sum(output_sizes)],
-                dtype=dtype,
-                initializer=tf.constant_initializer(bias_start, dtype=dtype))
+            biases = vs.get_variable("biases", [sum(output_sizes)], dtype=dtype,
+                                     initializer=tf.constant_initializer(0, dtype=dtype))
         return tf.nn.bias_add(res, biases)
