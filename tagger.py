@@ -165,7 +165,7 @@ class HighwayLSTMCell(LSTMCell):
         input_size = inputs.get_shape().with_rank(2)[1]
         if input_size.value is None:
             raise ValueError("Could not infer input size from inputs.get_shape()[-1]")
-        with vs.variable_scope(self, "highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
+        with vs.variable_scope("highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
             # i = input_gate, j = new_input, f = forget_gate, o = output_gate, r = transform_gate
             with vs.variable_scope('hidden_weights'):
                 hidden_matrix = linear_block_initialization(m_prev, 5 * [self._num_units], bias=False)
