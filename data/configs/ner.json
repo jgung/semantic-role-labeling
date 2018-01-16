@@ -2,7 +2,7 @@
   "max_epochs": 500,
   "batch_size": 10,
   "keep_prob": 0.5,
-  "max_length": 100,
+  "max_length": 120,
   "num_buckets": 100,
   "lstm_num_layers": 1,
   "lstm_hidden_dim": 200,
@@ -24,6 +24,7 @@
     {
       "name": "chars",
       "dim": 30,
+      "dropout": true,
       "function": {
         "name": "ConvNet",
         "window_size": 3,

@@ -35,6 +35,8 @@ class DBLSTMTagger(object):
         self.feed_dict = {}
         self.dropout_keep_prob = self._add_placeholder(KEEP_PROB_KEY, tf.float32)
         self.sequence_lengths = self._add_placeholder(LENGTH_KEY, tf.int32, [None])
+        self.global_step = tf.Variable(0, trainable=False)
+        self.global_step_increment = self.global_step.assign_add(1)
 
     def transition_matrix(self):
         if self.crf:
@@ -67,6 +69,8 @@ class DBLSTMTagger(object):
                 indices = self._add_placeholder(name=feature.name, dtype=tf.int32, shape=shape)
                 embedding = tf.nn.embedding_lookup(params=embedding_matrix, ids=indices, name='{}_embedding'.format(feature.name))
                 result = embedding if not feature.function else feature.function.apply(embedding)
+                if feature.dropout:
+                    result = tf.nn.dropout(result, keep_prob=self.dropout_keep_prob)
                 inputs.append(result)
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
@@ -81,10 +85,12 @@ class DBLSTMTagger(object):
                                                                 sequence_length=self.sequence_lengths)
             state_dim = self.state_dim
         else:
-            cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim), input_keep_prob=self.dropout_keep_prob,
-                                     output_keep_prob=self.dropout_keep_prob)
-            cell_bw = DropoutWrapper(LSTMCell(num_units=self.state_dim), input_keep_prob=self.dropout_keep_prob,
-                                     output_keep_prob=self.dropout_keep_prob)
+            cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim),
+                                     input_keep_prob=self.dropout_keep_prob,
+                                     output_keep_prob=self.dropout_keep_prob, dtype=tf.float32)
+            cell_bw = DropoutWrapper(LSTMCell(num_units=self.state_dim),
+                                     input_keep_prob=self.dropout_keep_prob,
+                                     output_keep_prob=self.dropout_keep_prob, dtype=tf.float32)
 
             with tf.name_scope('bidirectional_rnn'):
                 rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, inputs, sequence_length=self.sequence_lengths,
@@ -95,7 +101,7 @@ class DBLSTMTagger(object):
         with tf.name_scope('linear_projection'):
             softmax_weights = tf.get_variable('softmax_W', [state_dim, self.num_classes],
                                               initializer=tf.random_normal_initializer(0, 0.01))
-            softmax_bias = tf.get_variable('softmax_b', [self.num_classes], initializer=tf.constant_initializer(0.0))
+            softmax_bias = tf.get_variable('softmax_b', [self.num_classes], initializer=tf.zeros_initializer)
 
             time_steps = tf.shape(rnn_outputs)[1]
             rnn_outputs = tf.reshape(rnn_outputs, [-1, state_dim],
@@ -118,10 +124,13 @@ class DBLSTMTagger(object):
                 self.loss = tf.reduce_mean(losses)
 
         with tf.name_scope('train'):
-            optimizer = tf.train.AdadeltaOptimizer(learning_rate=1, epsilon=1e-6)
-            gradients, variables = zip(*optimizer.compute_gradients(self.loss))
-            gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
-            self.train_step = optimizer.apply_gradients(zip(gradients, variables))
+            self.train_step = self.training_op()
+
+    def training_op(self):
+        optimizer = tf.train.AdadeltaOptimizer(learning_rate=1, epsilon=1e-6)
+        gradients, variables = zip(*optimizer.compute_gradients(self.loss))
+        gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
+        return optimizer.apply_gradients(zip(gradients, variables))
 
     def test(self):
         inputs = self.embedding_layer()
@@ -138,6 +147,7 @@ class DBLSTMTagger(object):
 def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
     def _reverse(input_, seq_lengths):
         return array_ops.reverse_sequence(input=input_, seq_lengths=seq_lengths, seq_dim=1, batch_dim=0)
+
     outputs, state = None, None
     with vs.variable_scope("dblstm"):
         for i, cell in enumerate(cells):
@@ -211,6 +221,5 @@ def linear_block_initialization(args, output_sizes, bias):
             return res
         with vs.variable_scope(outer_scope) as inner_scope:
             inner_scope.set_partitioner(None)
-            biases = vs.get_variable("biases", [sum(output_sizes)], dtype=dtype,
-                                     initializer=tf.constant_initializer(0, dtype=dtype))
+            biases = vs.get_variable("biases", [sum(output_sizes)], dtype=dtype, initializer=tf.zeros_initializer)
         return tf.nn.bias_add(res, biases)

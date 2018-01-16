@@ -55,9 +55,9 @@ class TaggerTrainer(object):
                 sess.run(tf.global_variables_initializer())
                 graph.initialize_embeddings(sess)
 
-            current_epoch, step, max_score = 0, 0, float('-inf')
+            current_epoch, step, max_score = 1, 0, float('-inf')
             patience = 0
-            while current_epoch < self.max_epochs:
+            while current_epoch <= self.max_epochs:
                 logging.info('Epoch %d', current_epoch)
                 then = time.time()
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
@@ -67,6 +67,7 @@ class TaggerTrainer(object):
                         sess.run(graph.train_step, feed_dict=feed)
                         step += 1
                         bar.update(len(batch[LABEL_KEY]))
+                sess.run(graph.global_step_increment)  # increment global step variable associated with graph
                 logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
 
                 score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
@@ -74,7 +75,7 @@ class TaggerTrainer(object):
                     max_score = score
                     patience = 0
                     if self.save_path:
-                        save_path = graph.saver.save(sess, self.save_path)
+                        save_path = graph.saver.save(sess, self.save_path, global_step=graph.global_step)
                         logging.info("Model to file: %s" % save_path)
                 else:
                     patience += 1
@@ -133,7 +134,7 @@ class BatchIterator(object):
 
         data = [x for x in data if x[LENGTH_KEY] <= max_length]
         data.sort(key=lambda inst: inst[LENGTH_KEY])
-        self.bucket_size = self.size / num_buckets
+        self.bucket_size = self.size // num_buckets
         self.data = []
         for bucket in range(num_buckets):
             self.data.append(data[bucket * self.bucket_size: (bucket + 1) * self.bucket_size])
@@ -141,7 +142,7 @@ class BatchIterator(object):
         self.pointer = np.array([0] * num_buckets)
 
     def max_steps(self):
-        return len(self.data) / self.batch_size
+        return len(self.data) // self.batch_size
 
     def epoch(self):
         self._reset()

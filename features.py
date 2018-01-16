@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import math
 
 from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
 
@@ -17,12 +18,13 @@ LENGTH_KEY = "lengths"
 
 
 class Feature(object):
-    def __init__(self, name, dim, extractor, initializer=None, func=None):
+    def __init__(self, name, dim, extractor, dropout=False, initializer=None, func=None):
         """
         Generic feature.
         :param name: name of feature
         :param dim: dimensionality of feature embedding
         :param extractor: feature extractor
+        :param dropout: use dropout
         :param initializer: numpy matrix to initialize feature embedding
         :param func: function applied to compute feature
         """
@@ -30,6 +32,7 @@ class Feature(object):
         self.name = name
         self.dim = dim
         self.extractor = extractor
+        self.dropout = dropout
         self.initializer = initializer
         self.function = func
         self.embedding = None
@@ -63,10 +66,11 @@ def get_feature(feat_dict):
 
     name = feat_dict['name']
     dim = feat_dict['dim']
+    dropout = feat_dict.get('dropout', False)
     extractor = _get_extractor(feat_dict.get('extractor'))
     initializer = feat_dict.get('initializer')
     func = _get_composition_function(feat_dict.get('function'), dim)
-    return Feature(name=name, dim=dim, extractor=extractor, initializer=initializer, func=func)
+    return Feature(name=name, dim=dim, extractor=extractor, dropout=dropout, initializer=initializer, func=func)
 
 
 class ConvNet(object):
@@ -87,8 +91,9 @@ class ConvNet(object):
         # flatten sequences for input
         inputs = tf.reshape(inputs, shape=[-1, shape[-2], shape[-1], 1])
         # convolution weights
+        limit = math.sqrt(3.0 / char_filters)
         conv_filter = tf.get_variable("conv_w", [window_size, input_dim, 1, char_filters],
-                                      initializer=tf.random_normal_initializer(0, 0.01))
+                                      initializer=tf.random_uniform_initializer(-limit, limit))
         conv_bias = tf.get_variable("conv_b", [char_filters], initializer=tf.zeros_initializer)
         # convolution ops
         conv = tf.nn.conv2d(input=inputs, filter=conv_filter, strides=[1, 1, 1, 1], padding="VALID")

@@ -13,15 +13,37 @@ from tqdm import tqdm
 from features import LABEL_KEY, LENGTH_KEY
 from ner_feature_extractor import NerFeatureExtractor
 from srl_utils import configure_logger
-from tagger import KEEP_PROB_KEY
+from tagger import KEEP_PROB_KEY, DBLSTMTagger
 from trainer import TaggerTrainer
 
 FLAGS = None
 
 
+class NerTagger(DBLSTMTagger):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=False):
+        super(NerTagger, self).__init__(features, num_layers, state_dim, num_classes, transition_params, crf, dblstm)
+
+    def training_op(self):
+        # Use optimization algorithm described in Ma and Hovy 2016
+        learning_rate = tf.train.inverse_time_decay(learning_rate=0.015,
+                                                    global_step=self.global_step,
+                                                    decay_steps=1,
+                                                    decay_rate=0.05)
+        optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+        # optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        tvars = tf.trainable_variables()
+        gradients = tf.gradients(self.loss, tvars)
+        return optimizer.apply_gradients(zip(gradients, tvars))
+
+
 class DeepNerTrainer(TaggerTrainer):
     def __init__(self, flags, extractor):
         super(DeepNerTrainer, self).__init__(flags, extractor)
+
+    def _load_graph(self):
+        return NerTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
+                         state_dim=self.lstm_hidden_dim, transition_params=self.transition_params,
+                         crf=self.crf, dblstm=self.dblstm)
 
     def _test(self, graph, sess, iterator):
         then = time.time()
@@ -38,7 +60,7 @@ class DeepNerTrainer(TaggerTrainer):
                                 (pred, stop) in zip(logits, lengths)])
                 bar.update(len(batch[LABEL_KEY]))
         logging.info('Evaluation completed in %d seconds.', time.time() - then)
-        return self.evaluate(pred_ys, gold_ys)
+        return self.evaluate(gold_ys, pred_ys)
 
     def evaluate(self, gold_seqs, pred_seqs):
         with tempfile.NamedTemporaryFile(mode='w') as temp:
