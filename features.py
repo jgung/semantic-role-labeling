@@ -18,13 +18,13 @@ LENGTH_KEY = "lengths"
 
 
 class Feature(object):
-    def __init__(self, name, dim, extractor, dropout=False, initializer=None, func=None):
+    def __init__(self, name, dim, extractor, keep_prob=1, initializer=None, func=None):
         """
         Generic feature.
         :param name: name of feature
         :param dim: dimensionality of feature embedding
         :param extractor: feature extractor
-        :param dropout: use dropout
+        :param keep_prob: dropout keep probability
         :param initializer: numpy matrix to initialize feature embedding
         :param func: function applied to compute feature
         """
@@ -32,7 +32,7 @@ class Feature(object):
         self.name = name
         self.dim = dim
         self.extractor = extractor
-        self.dropout = dropout
+        self.keep_prob = keep_prob
         self.initializer = initializer
         self.function = func
         self.embedding = None
@@ -66,11 +66,11 @@ def get_feature(feat_dict):
 
     name = feat_dict['name']
     dim = feat_dict['dim']
-    dropout = feat_dict.get('dropout', False)
+    keep_prob = feat_dict.get('keep_prob', 1)
     extractor = _get_extractor(feat_dict.get('extractor'))
     initializer = feat_dict.get('initializer')
     func = _get_composition_function(feat_dict.get('function'), dim)
-    return Feature(name=name, dim=dim, extractor=extractor, dropout=dropout, initializer=initializer, func=func)
+    return Feature(name=name, dim=dim, extractor=extractor, keep_prob=keep_prob, initializer=initializer, func=func)
 
 
 class ConvNet(object):

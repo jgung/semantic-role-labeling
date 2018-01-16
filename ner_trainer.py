@@ -13,7 +13,7 @@ from tqdm import tqdm
 from features import LABEL_KEY, LENGTH_KEY
 from ner_feature_extractor import NerFeatureExtractor
 from srl_utils import configure_logger
-from tagger import KEEP_PROB_KEY, DBLSTMTagger
+from tagger import DBLSTMTagger
 from trainer import TaggerTrainer
 
 FLAGS = None
@@ -51,7 +51,8 @@ class DeepNerTrainer(TaggerTrainer):
         with tqdm(total=iterator.size, leave=False, unit=' instances') as bar:
             for batch in iterator.epoch():
                 feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                feed[graph.feed_dict[KEEP_PROB_KEY]] = 1.0
+                for key in graph.dropout_keys:
+                    feed[graph.feed_dict[key]] = 1.0
                 logits = sess.run(graph.scores, feed_dict=feed)
                 lengths = [l - 1 for l in batch[LENGTH_KEY]] if self.crf else batch[LENGTH_KEY]  # remove padding before eval
                 gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], lengths)])

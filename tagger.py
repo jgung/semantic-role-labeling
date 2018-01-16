@@ -32,8 +32,9 @@ class DBLSTMTagger(object):
         self.train_step = None
         self.saver = None
 
+        self.dropout_keys = []
         self.feed_dict = {}
-        self.dropout_keep_prob = self._add_placeholder(KEEP_PROB_KEY, tf.float32)
+        self.dropout_keep_prob = self._add_placeholder(KEEP_PROB_KEY, tf.float32, dropout=True)
         self.sequence_lengths = self._add_placeholder(LENGTH_KEY, tf.int32, [None])
         self.global_step = tf.Variable(0, trainable=False)
         self.global_step_increment = self.global_step.assign_add(1)
@@ -43,9 +44,11 @@ class DBLSTMTagger(object):
             return self.transition_params.eval()
         return self.transition_params
 
-    def _add_placeholder(self, name, dtype, shape=None):
+    def _add_placeholder(self, name, dtype, shape=None, dropout=False):
         placeholder = tf.placeholder(dtype=dtype, shape=shape, name=name)
         self.feed_dict[name] = placeholder
+        if dropout:
+            self.dropout_keys.append(name)
         return placeholder
 
     def initialize_embeddings(self, sess):
@@ -69,8 +72,9 @@ class DBLSTMTagger(object):
                 indices = self._add_placeholder(name=feature.name, dtype=tf.int32, shape=shape)
                 embedding = tf.nn.embedding_lookup(params=embedding_matrix, ids=indices, name='{}_embedding'.format(feature.name))
                 result = embedding if not feature.function else feature.function.apply(embedding)
-                if feature.dropout:
-                    result = tf.nn.dropout(result, keep_prob=self.dropout_keep_prob)
+                if feature.keep_prob < 1:
+                    keep_prob_placeholder = self._add_placeholder(feature.name + KEEP_PROB_KEY, tf.float32, dropout=True)
+                    result = tf.nn.dropout(result, keep_prob=keep_prob_placeholder)
                 inputs.append(result)
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
@@ -85,11 +89,11 @@ class DBLSTMTagger(object):
                                                                 sequence_length=self.sequence_lengths)
             state_dim = self.state_dim
         else:
-            cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim),
-                                     input_keep_prob=self.dropout_keep_prob,
+            cell_fw = DropoutWrapper(LSTMCell(num_units=self.state_dim), variational_recurrent=True,
+                                     state_keep_prob=self.dropout_keep_prob,
                                      output_keep_prob=self.dropout_keep_prob, dtype=tf.float32)
-            cell_bw = DropoutWrapper(LSTMCell(num_units=self.state_dim),
-                                     input_keep_prob=self.dropout_keep_prob,
+            cell_bw = DropoutWrapper(LSTMCell(num_units=self.state_dim), variational_recurrent=True,
+                                     state_keep_prob=self.dropout_keep_prob,
                                      output_keep_prob=self.dropout_keep_prob, dtype=tf.float32)
 
             with tf.name_scope('bidirectional_rnn'):
