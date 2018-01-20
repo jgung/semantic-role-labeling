@@ -25,12 +25,12 @@ class NerTagger(DBLSTMTagger):
 
     def training_op(self):
         # Use optimization algorithm described in Ma and Hovy 2016
-        learning_rate = tf.train.inverse_time_decay(learning_rate=0.015,
-                                                    global_step=self.global_step,
-                                                    decay_steps=1,
-                                                    decay_rate=0.05)
-        optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
-        # optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        # learning_rate = tf.train.inverse_time_decay(learning_rate=0.015,
+        #                                             global_step=self.global_step,
+        #                                             decay_steps=1,
+        #                                             decay_rate=0.05)
+        # optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         tvars = tf.trainable_variables()
         gradients = tf.gradients(self.loss, tvars)
         return optimizer.apply_gradients(zip(gradients, tvars))

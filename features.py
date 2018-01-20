@@ -58,7 +58,7 @@ def get_feature(feat_dict):
                 return KeyFeatureExtractor(key=key)
             if extractor_name == 'lower':
                 if _rank == 3:
-                    return ListFeatureExtractor(key=key, apply_func=lambda x: x.lower())
+                    return ListFeatureExtractor(key=key, apply_func=lambda x: [word.lower() for word in x])
                 return KeyFeatureExtractor(key=key, apply_func=lambda x: x.lower())
 
         return IdentityExtractor()
@@ -241,7 +241,8 @@ class SequenceInstanceProcessor(object):
         for feature in self.features:
             instance[feature.name] = feature.extractor.extract(sequence)
             if feature.base_feature:
-                instance[LENGTH_KEY] = instance[feature.name].size
+                feat = instance[feature.name]
+                instance[LENGTH_KEY] = isinstance(feat, list) and len(feat) or feat.size
         if labels:
             instance[LABEL_KEY] = self.extractors[LABEL_KEY].extract(sequence)
         return instance

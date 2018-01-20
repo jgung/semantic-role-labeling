@@ -1,7 +1,7 @@
 import argparse
 
 import features
-from constants import LENGTH_KEY, LABEL_KEY
+from constants import LABEL_KEY
 from srl_reader import ConllPhraseReader
 from srl_utils import serialize
 
@@ -28,28 +28,12 @@ class SrlFeatureExtractor(features.SequenceInstanceProcessor):
         return results
 
 
-class PhraseSrlFeatureExtractor(SrlFeatureExtractor):
-    def __init__(self, feats):
-        super(PhraseSrlFeatureExtractor, self).__init__(feats)
-
-    def extract(self, sequence, labels=None):
-        instance = {}
-        for feature in self.features:
-            instance[feature.name] = feature.extractor.extract(sequence)
-            if feature.base_feature:
-                instance[LENGTH_KEY] = instance[feature.name].size
-        if labels:
-            instance[LABEL_KEY] = self.extractors[LABEL_KEY]
-        return instance
-
-
 def main(flags):
     # reader = Conll2005Reader() if flags.dataset == 'conll05' else Conll2012Reader()
     reader = ConllPhraseReader()
 
     feats = features.get_features_from_config(flags.config)
-    # feature_extractor = SrlFeatureExtractor(feats=feats)
-    feature_extractor = PhraseSrlFeatureExtractor(feats=feats)
+    feature_extractor = SrlFeatureExtractor(feats=feats)
 
     train = True
     if flags.mode != 'new':

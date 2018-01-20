@@ -56,7 +56,7 @@ class DeepSrlTrainer(TaggerTrainer):
             line = ''
             for word, predicted, marker in zip(
                     words, chunk([self.reverse_label_vocab[l] for l in labels], conll=True), markers):
-                line += '{} {}\n'.format(marker == self.marker_index and word or '-', predicted)
+                line += '{} {}\n'.format(marker == self.marker_index and 'x' or '-', predicted)
             output_file.write(line + '\n')
         output_file.flush()
         output_file.seek(0)

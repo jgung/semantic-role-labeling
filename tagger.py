@@ -14,7 +14,7 @@ KEEP_PROB_KEY = "keep_prob"
 
 
 class DBLSTMTagger(object):
-    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True, phrase=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
@@ -32,6 +32,8 @@ class DBLSTMTagger(object):
         self.loss = None
         self.train_step = None
         self.saver = None
+
+        self.phrase = phrase
 
         self.dropout_keys = []
         self.feed_dict = {}

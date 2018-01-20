@@ -26,6 +26,8 @@
       "name": "chars",
       "dim": 30,
       "keep_prob": 0.5,
+      "left_padding": 2,
+      "right_padding": 2,
       "rank": 3,
       "function": {
         "name": "ConvNet",

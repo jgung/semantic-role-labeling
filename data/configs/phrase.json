@@ -13,7 +13,7 @@
       "name": "words",
       "base": true,
       "rank": 3,
-      "dim": -1,
+      "dim": 100,
       "initializer": {
         "pkl_path": "vectors.pkl",
         "initializer_path": "data/vectors/glove.6B.100d.txt"
@@ -31,7 +31,7 @@
     },
     {
       "name": "markers",
-      "rank": 3,
+      "rank": 2,
       "dim": 100,
       "extractor": {
         "name": "key",
