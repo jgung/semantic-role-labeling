@@ -1,0 +1,12 @@
+PAD_WORD = "<PAD>"
+UNKNOWN_WORD = "<UNK>"
+START_WORD = "<BOS>"
+END_WORD = "<EOS>"
+PAD_INDEX = 0
+UNKNOWN_INDEX = 1
+START_INDEX = 2
+END_INDEX = 3
+
+MARKER_KEY = "markers"
+LABEL_KEY = "labels"
+LENGTH_KEY = "lengths"
