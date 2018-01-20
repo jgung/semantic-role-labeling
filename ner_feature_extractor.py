@@ -1,7 +1,7 @@
 import argparse
 
 import features
-from features import LABEL_KEY
+from constants import LABEL_KEY
 from srl_reader import Conll2003Reader
 from srl_utils import serialize
 
@@ -9,7 +9,6 @@ from srl_utils import serialize
 class NerFeatureExtractor(features.SequenceInstanceProcessor):
     def __init__(self, feats):
         super(NerFeatureExtractor, self).__init__(feats)
-        self.extractors[LABEL_KEY] = features.KeyFeatureExtractor(key=LABEL_KEY, indices={}, unknown_word='O')
 
     def read_instances(self, sentences, train=False):
         """
@@ -22,8 +21,7 @@ class NerFeatureExtractor(features.SequenceInstanceProcessor):
             self._init_vocabularies()
         results = []
         for sentence in sentences:
-            sentence[LABEL_KEY] = sentence['ne']
-            results.append(self.extract(sentence))
+            results.append(self.extract(sentence, sentence[LABEL_KEY]))
         return results
 
 
@@ -37,9 +35,13 @@ def main(flags):
         if flags.mode == 'load':
             feature_extractor.test()
             train = False
-    instances = feature_extractor.read_instances(reader.read_files(flags.input, flags.ext), train=train)
+    data = reader.read_files(flags.input, flags.ext)
+    print('Processing {} sentences from {}'.format(len(data), flags.input))
+    instances = feature_extractor.read_instances(data, train=train)
+    print('Saving {} processed sentences to {}'.format(len(instances), flags.output))
     serialize(instances, flags.output)
     if train:
+        print('Saving updated feature vocabularies to {}'.format(flags.vocab))
         feature_extractor.save(flags.vocab)
 
 

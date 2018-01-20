@@ -6,8 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from features import LABEL_KEY, LENGTH_KEY, END_INDEX, START_INDEX
-from features import PAD_INDEX
+from constants import LABEL_KEY, LENGTH_KEY, END_INDEX, START_INDEX, PAD_INDEX
 from features import get_features_from_config
 from srl_utils import deserialize
 from srl_utils import read_json
@@ -123,14 +122,13 @@ class TaggerTrainer(object):
 
 
 class BatchIterator(object):
-    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False, lr_pad=2):
+    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False):
         super(BatchIterator, self).__init__()
         self.num_buckets = num_buckets
         self.batch_size = batch_size
         self.size = len(data)
         self.features = features
         self.end_pad = 1 if end_pad else 0
-        self.lr_pad = lr_pad
 
         data = [x for x in data if x[LENGTH_KEY] <= max_length]
         data.sort(key=lambda inst: inst[LENGTH_KEY])
@@ -166,31 +164,54 @@ class BatchIterator(object):
     def _prepare_batch(self, batch):
         lengths = [instance[LENGTH_KEY] + self.end_pad for instance in batch]
         max_length = max(lengths)  # minimum length 2 due to https://github.com/tensorflow/tensorflow/issues/7751
-        labels = self._pad_vals(LABEL_KEY, batch, max_length)
+        labels = self._pad_2d(LABEL_KEY, batch, max_length)
         feed_dict = {LABEL_KEY: labels, LENGTH_KEY: lengths}
         for feature in self.features:
-            if feature.function is None:
-                feed_dict[feature.name] = self._pad_vals(feature.name, batch, max_length)
-            else:
-                feed_dict[feature.name] = self._pad_list_feature(feature.name, batch, max_length, feature.function.max_length)
+            if feature.rank == 2:
+                feed_dict[feature.name] = self._pad_2d(feature.name, batch, max_length)
+            elif feature.rank == 3:
+                feed_dict[feature.name] = self._pad_3d(feature, batch, max_length, feature.function.max_length)
+            elif feature.rank == 4:
+                feed_dict[feature.name] = self._pad_4d(feature, batch, max_length, feature.function.max_length)
+            if feature.keep_prob < 1:
+                feed_dict[feature.name + KEEP_PROB_KEY] = feature.keep_prob
         return feed_dict
 
     @staticmethod
-    def _pad_vals(key, batch, maxlen):
-        padded = np.empty([len(batch), maxlen], dtype=np.int32)
+    def _pad_2d(key, batch, max_tokens):
+        padded = np.empty([len(batch), max_tokens], dtype=np.int32)
         padded.fill(PAD_INDEX)
         for i, sentence in enumerate(padded):
             sentence[:batch[i][LENGTH_KEY]] = batch[i][key]
         return padded
 
-    def _pad_list_feature(self, key, batch, maxlen, max_feat_length):
-        padded = np.empty([len(batch), maxlen, max_feat_length], dtype=np.int32)
-        padded.fill(PAD_INDEX)
-        for i, sentence in enumerate(padded):
-            features = batch[i][key]
-            for index, word in enumerate(features):
-                sentence[index, 0:self.lr_pad] = START_INDEX
-                sentence[index, self.lr_pad:word.size + self.lr_pad] = word[:max_feat_length - self.lr_pad]
-                end_word = word.size + self.lr_pad
-                sentence[index, end_word:end_word + self.lr_pad] = END_INDEX
-        return padded
+    @staticmethod
+    def _pad_3d(feature, batch, max_tokens, max_feat_length):
+        padded_batch = np.empty([len(batch), max_tokens, max_feat_length], dtype=np.int32)
+        padded_batch.fill(PAD_INDEX)
+        for i_sentence, sentence in enumerate(padded_batch):
+            phrases = batch[i_sentence][feature.name]
+            for i_phrase, phrase in enumerate(phrases):
+                sentence[i_phrase, 0:feature.left_padding] = START_INDEX
+                end_word = phrase.size + feature.left_padding
+                sentence[i_phrase, feature.left_padding:end_word] = phrase[:max_feat_length - feature.left_padding]
+                sentence[i_phrase, end_word:end_word + feature.right_padding] = END_INDEX
+        return padded_batch
+
+    @staticmethod
+    def _pad_4d(feature, batch, max_tokens, max_feat_length):
+        max_sub_tokens = 0
+        for sentence in batch:
+            for phrase in sentence[feature.name]:
+                max_sub_tokens = max(max_sub_tokens, len(phrase))
+        padded_batch = np.empty([len(batch), max_tokens, max_sub_tokens, max_feat_length], dtype=np.int32)
+        padded_batch.fill(PAD_INDEX)
+        for i_sentence, sentence in enumerate(padded_batch):
+            phrases = batch[i_sentence][feature.name]
+            for i_phrase, phrase in enumerate(phrases):
+                for i_word, word in enumerate(phrase):
+                    sentence[i_phrase, i_word, 0:feature.left_padding] = START_INDEX
+                    end_word = word.size + feature.left_padding
+                    sentence[i_phrase, i_word, feature.left_padding:end_word] = word[:max_feat_length - feature.left_padding]
+                    sentence[i_phrase, i_word, end_word:end_word + feature.right_padding] = END_INDEX
+        return padded_batch

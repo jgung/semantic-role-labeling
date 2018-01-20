@@ -10,7 +10,7 @@ import tensorflow as tf
 from tensorflow.contrib.crf import viterbi_decode
 from tqdm import tqdm
 
-from features import LABEL_KEY, LENGTH_KEY
+from constants import LABEL_KEY, LENGTH_KEY
 from ner_feature_extractor import NerFeatureExtractor
 from srl_utils import configure_logger
 from tagger import DBLSTMTagger

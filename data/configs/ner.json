@@ -11,6 +11,7 @@
   "features": [
     {
       "name": "words",
+      "base": true,
       "dim": -1,
       "initializer": {
         "pkl_path": "vectors.pkl",
@@ -25,6 +26,7 @@
       "name": "chars",
       "dim": 30,
       "keep_prob": 0.5,
+      "rank": 3,
       "function": {
         "name": "ConvNet",
         "window_size": 3,

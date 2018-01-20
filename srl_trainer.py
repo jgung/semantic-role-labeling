@@ -9,12 +9,10 @@ import tensorflow as tf
 from tensorflow.contrib.crf import viterbi_decode
 from tqdm import tqdm
 
-from features import LABEL_KEY, LENGTH_KEY
-from srl_feature_extractor import MARKER_KEY
+from constants import LABEL_KEY, LENGTH_KEY, MARKER_KEY
 from srl_feature_extractor import SrlFeatureExtractor
 from srl_reader import chunk
 from srl_utils import configure_logger
-from tagger import KEEP_PROB_KEY
 from trainer import TaggerTrainer
 
 FLAGS = None

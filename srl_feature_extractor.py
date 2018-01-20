@@ -1,11 +1,12 @@
 import argparse
 
 import features
-from features import LABEL_KEY
-from srl_reader import Conll2005Reader, Conll2012Reader
+from constants import LENGTH_KEY, LABEL_KEY
+from srl_reader import ConllPhraseReader
 from srl_utils import serialize
 
 MARKER_KEY = 'markers'
+PHRASES = 'phrases'
 
 
 class SrlFeatureExtractor(features.SequenceInstanceProcessor):
@@ -22,18 +23,34 @@ class SrlFeatureExtractor(features.SequenceInstanceProcessor):
         if train:
             self._init_vocabularies()
         results = []
-        for sentence, predicates in sentences:
-            for key, labels in predicates.iteritems():
-                sentence[LABEL_KEY] = labels
-                sentence[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
-                results.append(self.extract(sentence))
+        for sentence in sentences:
+            results.append(self.extract(sentence, sentence[LABEL_KEY]))
         return results
 
 
+class PhraseSrlFeatureExtractor(SrlFeatureExtractor):
+    def __init__(self, feats):
+        super(PhraseSrlFeatureExtractor, self).__init__(feats)
+
+    def extract(self, sequence, labels=None):
+        instance = {}
+        for feature in self.features:
+            instance[feature.name] = feature.extractor.extract(sequence)
+            if feature.base_feature:
+                instance[LENGTH_KEY] = instance[feature.name].size
+        if labels:
+            instance[LABEL_KEY] = self.extractors[LABEL_KEY]
+        return instance
+
+
 def main(flags):
-    reader = Conll2005Reader() if flags.dataset == 'conll05' else Conll2012Reader()
+    # reader = Conll2005Reader() if flags.dataset == 'conll05' else Conll2012Reader()
+    reader = ConllPhraseReader()
+
     feats = features.get_features_from_config(flags.config)
-    feature_extractor = SrlFeatureExtractor(feats=feats)
+    # feature_extractor = SrlFeatureExtractor(feats=feats)
+    feature_extractor = PhraseSrlFeatureExtractor(feats=feats)
+
     train = True
     if flags.mode != 'new':
         feature_extractor.load(flags.vocab)

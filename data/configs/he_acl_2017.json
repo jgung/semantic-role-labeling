@@ -10,6 +10,7 @@
   "features": [
     {
       "name": "words",
+      "base": true,
       "dim": -1,
       "initializer": {
         "pkl_path": "vectors.pkl",

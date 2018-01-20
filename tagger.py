@@ -3,11 +3,12 @@ from tensorflow.contrib.crf import crf_log_likelihood
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
-from tensorflow.python.util import nest
-from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn_cell import DropoutWrapper
+from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn_cell import LSTMStateTuple
-from features import LENGTH_KEY
+from tensorflow.python.util import nest
+
+from constants import LENGTH_KEY, LABEL_KEY
 
 KEEP_PROB_KEY = "keep_prob"
 
@@ -68,10 +69,14 @@ class DBLSTMTagger(object):
                 if feature.embedding is not None:
                     self._embedding_placeholder[feature.name] = tf.placeholder(tf.float32, [feature.vocab_size(), feature.dim])
                     self._embedding_init[feature.name] = embedding_matrix.assign(self._embedding_placeholder[feature.name])
-                shape = [None, None, None] if feature.function else [None, None]
+                shape = [None] * feature.rank
                 indices = self._add_placeholder(name=feature.name, dtype=tf.int32, shape=shape)
                 embedding = tf.nn.embedding_lookup(params=embedding_matrix, ids=indices, name='{}_embedding'.format(feature.name))
-                result = embedding if not feature.function else feature.function.apply(embedding)
+
+                result = embedding
+                if feature.rank == 3:
+                    result = feature.function.apply(embedding)
+
                 if feature.keep_prob < 1:
                     keep_prob_placeholder = self._add_placeholder(feature.name + KEEP_PROB_KEY, tf.float32, dropout=True)
                     result = tf.nn.dropout(result, keep_prob=keep_prob_placeholder)
@@ -108,15 +113,13 @@ class DBLSTMTagger(object):
             softmax_bias = tf.get_variable('softmax_b', [self.num_classes], initializer=tf.zeros_initializer)
 
             time_steps = tf.shape(rnn_outputs)[1]
-            rnn_outputs = tf.reshape(rnn_outputs, [-1, state_dim],
-                                     name="flatten_rnn_outputs_for_linear_projection")
-            logits = tf.nn.xw_plus_b(x=rnn_outputs, weights=softmax_weights, biases=softmax_bias,
-                                     name="softmax_projection")
+            rnn_outputs = tf.reshape(rnn_outputs, [-1, state_dim], name="flatten_rnn_outputs_for_linear_projection")
+            logits = tf.nn.xw_plus_b(x=rnn_outputs, weights=softmax_weights, biases=softmax_bias, name="softmax_projection")
             self.scores = tf.reshape(logits, [-1, time_steps, self.num_classes], name="unflatten_logits")
 
     def add_train_ops(self):
         with tf.name_scope('loss_ops'):
-            labels = self._add_placeholder("labels", tf.int32, [None, None])
+            labels = self._add_placeholder(LABEL_KEY, tf.int32, [None, None])
             if self.crf:
                 log_likelihood, self.transition_params = crf_log_likelihood(self.scores, labels, self.sequence_lengths)
                 losses = -log_likelihood
@@ -156,13 +159,13 @@ def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
     with vs.variable_scope("dblstm"):
         for i, cell in enumerate(cells):
             if i % 2 == 1:
-                with vs.variable_scope("bw-%s" % (i / 2)) as bw_scope:
+                with vs.variable_scope("bw-%s" % (i // 2)) as bw_scope:
                     inputs_reverse = _reverse(inputs, seq_lengths=sequence_length)
                     outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs_reverse, sequence_length=sequence_length,
                                                        dtype=tf.float32, scope=bw_scope)
                     outputs = _reverse(outputs, seq_lengths=sequence_length)
             else:
-                with vs.variable_scope("fw-%s" % (i / 2)) as fw_scope:
+                with vs.variable_scope("fw-%s" % (i // 2)) as fw_scope:
                     outputs, state = tf.nn.dynamic_rnn(cell=cell, inputs=inputs, sequence_length=sequence_length,
                                                        dtype=tf.float32, scope=fw_scope)
             inputs = outputs

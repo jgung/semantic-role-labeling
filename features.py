@@ -1,32 +1,26 @@
-import tensorflow as tf
-import numpy as np
 import math
 
+import numpy as np
+import tensorflow as tf
+
 from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
-
-PAD_WORD = "<PAD>"
-UNKNOWN_WORD = "<UNK>"
-START_WORD = "<BOS>"
-END_WORD = "<EOS>"
-PAD_INDEX = 0
-UNKNOWN_INDEX = 1
-START_INDEX = 2
-END_INDEX = 3
-
-LABEL_KEY = "labels"
-LENGTH_KEY = "lengths"
+from constants import PAD_WORD, UNKNOWN_WORD, START_WORD, END_WORD
+from constants import UNKNOWN_INDEX
+from constants import LABEL_KEY, LENGTH_KEY
 
 
 class Feature(object):
-    def __init__(self, name, dim, extractor, keep_prob=1, initializer=None, func=None):
+    def __init__(self, name, dim, extractor, rank, keep_prob=1, initializer=None, func=None, base_feature=False):
         """
         Generic feature.
         :param name: name of feature
         :param dim: dimensionality of feature embedding
         :param extractor: feature extractor
+        :param rank: rank of feature tensor
         :param keep_prob: dropout keep probability
         :param initializer: numpy matrix to initialize feature embedding
         :param func: function applied to compute feature
+        :param base_feature: true if this feature is used to determine the length of each instance
         """
         super(Feature, self).__init__()
         self.name = name
@@ -35,7 +29,13 @@ class Feature(object):
         self.keep_prob = keep_prob
         self.initializer = initializer
         self.function = func
+        self.rank = rank
+        self.base_feature = base_feature
+
         self.embedding = None
+        self.left_padding = 0
+        self.right_padding = 0
+        self.max_length = -1
 
     def vocab_size(self):
         return len(self.extractor.indices)
@@ -46,15 +46,21 @@ def get_features_from_config(config):
 
 
 def get_feature(feat_dict):
-    def _get_extractor(extractor_dict):
+    def _get_extractor(extractor_dict, _rank):
         if extractor_dict is not None:
             extractor_name = extractor_dict['name']
-            if extractor_name == 'key':
-                return KeyFeatureExtractor(extractor_dict['key'])
-            if extractor_name == 'lower':
-                return LowerCaseExtractor(extractor_dict['key'])
+            key = extractor_dict['key']
             if extractor_name == 'chars':
-                return CharacterFeatureFunction(extractor_dict['key'])
+                if _rank == 4:
+                    return NestedListFeatureExtractor(key=key, apply_func=lambda x: list(x))
+                return ListFeatureExtractor(key=key, apply_func=lambda x: list(x))
+            if extractor_name == 'key':
+                return KeyFeatureExtractor(key=key)
+            if extractor_name == 'lower':
+                if _rank == 3:
+                    return ListFeatureExtractor(key=key, apply_func=lambda x: x.lower())
+                return KeyFeatureExtractor(key=key, apply_func=lambda x: x.lower())
+
         return IdentityExtractor()
 
     def _get_composition_function(func_dict, input_dim):
@@ -66,11 +72,19 @@ def get_feature(feat_dict):
 
     name = feat_dict['name']
     dim = feat_dict['dim']
+    rank = feat_dict.get('rank', 2)
+
+    extractor = _get_extractor(feat_dict.get('extractor'), rank)
     keep_prob = feat_dict.get('keep_prob', 1)
-    extractor = _get_extractor(feat_dict.get('extractor'))
     initializer = feat_dict.get('initializer')
+    base_feat = feat_dict.get('base', False)
+
     func = _get_composition_function(feat_dict.get('function'), dim)
-    return Feature(name=name, dim=dim, extractor=extractor, keep_prob=keep_prob, initializer=initializer, func=func)
+    feature = Feature(name=name, dim=dim, extractor=extractor, rank=rank,
+                      keep_prob=keep_prob, initializer=initializer, func=func, base_feature=base_feat)
+    feature.left_padding = feat_dict.get('left_padding', 0)
+    feature.right_padding = feat_dict.get('right_padding', 0)
+    return feature
 
 
 class ConvNet(object):
@@ -115,7 +129,6 @@ class FeatureExtractor(object):
         if unknown_word not in self.indices:
             # noinspection PyTypeChecker
             self.indices[unknown_word] = len(self.indices)
-        self.list_feature = False
         self.unknown_word = unknown_word
 
     def initialize_indices(self, values):
@@ -129,18 +142,23 @@ class FeatureExtractor(object):
         :param sequence: feature extraction input
         :return: list of features
         """
-        indices = []
-        for value in self._get_values(sequence):
-            result = self._apply(value)
-            index = self.indices.get(result)
-            if index is None:
-                if self.train:
-                    index = len(self.indices)
-                    self.indices[result] = index
-                else:
-                    index = UNKNOWN_INDEX
-            indices.append(index)
-        return indices
+        indices = [self._extract_single(self._apply(result)) for result in self._get_values(sequence)]
+        return np.array(indices, np.int32)
+
+    def _extract_single(self, feat):
+        """
+        Extract the index of a single feature, updating the index dictionary if training.
+        :param feat: feature value
+        :return: feature index
+        """
+        index = self.indices.get(feat)
+        if index is None:
+            if self.train:
+                index = len(self.indices)
+                self.indices[feat] = index
+            else:
+                index = UNKNOWN_INDEX
+        return index
 
     def _apply(self, value):
         """
@@ -166,65 +184,44 @@ class IdentityExtractor(FeatureExtractor):
         return sequence
 
 
-class ListFeatureExtractor(FeatureExtractor):
-    def __init__(self, train=False, indices=None, unknown_word=UNKNOWN_WORD):
-        super(ListFeatureExtractor, self).__init__(train, indices, unknown_word)
-        self.list_feature = True
+class KeyFeatureExtractor(FeatureExtractor):
+    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD, apply_func=lambda x: x):
+        super(KeyFeatureExtractor, self).__init__(train, indices, unknown_word)
+        self.key = key
+        self.apply_func = apply_func
 
-    def initialize_indices(self, values):
-        super(ListFeatureExtractor, self).initialize_indices(values)
+    def _get_values(self, sequence):
+        return sequence[self.key]
+
+    def _apply(self, value):
+        return self.apply_func(value)
+
+
+class ListFeatureExtractor(KeyFeatureExtractor):
+    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD, apply_func=lambda x: x):
+        super(ListFeatureExtractor, self).__init__(key, train, indices, unknown_word, apply_func)
 
     def extract(self, sequence):
         all_indices = []
         for value in self._get_values(sequence):
-            results = self._apply(value)
-            indices = []
-            for result in results:
-                index = self.indices.get(result)
-                if index is None and self.train:
-                    if self.train:
-                        index = len(self.indices)
-                        self.indices[result] = index
-                    else:
-                        index = UNKNOWN_INDEX
-                indices.append(index)
-            all_indices.append(indices)
+            indices = [self._extract_single(result) for result in self._apply(value)]
+            all_indices.append(np.array(indices, np.int32))
         return all_indices
 
-    def _get_values(self, sequence):
-        return []
 
-    def _apply(self, value):
-        return []
+class NestedListFeatureExtractor(KeyFeatureExtractor):
+    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD, apply_func=lambda x: x):
+        super(NestedListFeatureExtractor, self).__init__(key, train, indices, unknown_word, apply_func)
 
-
-class CharacterFeatureFunction(ListFeatureExtractor):
-    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD):
-        super(CharacterFeatureFunction, self).__init__(train, indices, unknown_word)
-        self.key = key
-
-    def _apply(self, value):
-        return list(value)
-
-    def _get_values(self, sequence):
-        return sequence[self.key]
-
-
-class KeyFeatureExtractor(IdentityExtractor):
-    def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD):
-        super(KeyFeatureExtractor, self).__init__(train, indices, unknown_word)
-        self.key = key
-
-    def _get_values(self, sequence):
-        return sequence[self.key]
-
-    def _apply(self, value):
-        return value
-
-
-class LowerCaseExtractor(KeyFeatureExtractor):
-    def _apply(self, value):
-        return super(LowerCaseExtractor, self)._apply(value).lower()
+    def extract(self, sequence):
+        all_indices = []
+        for sub_list in self._get_values(sequence):
+            sub_list_indices = []
+            for value in sub_list:
+                indices = [self._extract_single(result) for result in self._apply(value)]
+                sub_list_indices.append(np.array(indices, np.int32))
+            all_indices.append(sub_list_indices)
+        return all_indices
 
 
 class SequenceInstanceProcessor(object):
@@ -239,15 +236,14 @@ class SequenceInstanceProcessor(object):
         self.extractors[LABEL_KEY] = KeyFeatureExtractor(LABEL_KEY, indices={}, unknown_word='O')
         self.resources = {}
 
-    def extract(self, sentence):
+    def extract(self, sequence, labels=None):
         instance = {}
-        for name, extractor in self.extractors.items():
-            if extractor.list_feature:
-                feats = [np.array(value, dtype=np.int32) for value in extractor.extract(sentence)]
-            else:
-                feats = np.array(extractor.extract(sentence), dtype=np.int32)
-            instance[name] = feats
-        instance[LENGTH_KEY] = instance[LABEL_KEY].shape[0]
+        for feature in self.features:
+            instance[feature.name] = feature.extractor.extract(sequence)
+            if feature.base_feature:
+                instance[LENGTH_KEY] = instance[feature.name].size
+        if labels:
+            instance[LABEL_KEY] = self.extractors[LABEL_KEY].extract(sequence)
         return instance
 
     def read_instances(self, sentences, train=False):
@@ -303,4 +299,4 @@ class SequenceInstanceProcessor(object):
                 vectors, dim = read_vectors(path, unk_word=feature.extractor.unknown_word, pad_word=PAD_WORD)
                 self.resources[feature.name] = vectors, dim
                 feature.extractor.initialize_indices(vectors.keys())
-                feature.extractor.train = False
+                feature.extractor.train = False  # don't update vocabularies initialized from word embeddings
