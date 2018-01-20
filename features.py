@@ -3,10 +3,10 @@ import math
 import numpy as np
 import tensorflow as tf
 
-from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
+from constants import LABEL_KEY, LENGTH_KEY
 from constants import PAD_WORD, UNKNOWN_WORD, START_WORD, END_WORD
 from constants import UNKNOWN_INDEX
-from constants import LABEL_KEY, LENGTH_KEY
+from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
 
 
 class Feature(object):
@@ -51,9 +51,9 @@ def get_feature(feat_dict):
             extractor_name = extractor_dict['name']
             key = extractor_dict['key']
             if extractor_name == 'chars':
-                if _rank == 4:
-                    return NestedListFeatureExtractor(key=key, apply_func=lambda x: list(x))
                 return ListFeatureExtractor(key=key, apply_func=lambda x: list(x))
+            if extractor_name == 'phrase_chars':
+                return ConcatenatingListFeatureExtractor(key=key, apply_func=lambda x: list(x))
             if extractor_name == 'key':
                 return KeyFeatureExtractor(key=key)
             if extractor_name == 'lower':
@@ -209,9 +209,24 @@ class ListFeatureExtractor(KeyFeatureExtractor):
         return all_indices
 
 
-class NestedListFeatureExtractor(KeyFeatureExtractor):
+# class NestedListFeatureExtractor(KeyFeatureExtractor):
+#     def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD, apply_func=lambda x: x):
+#         super(NestedListFeatureExtractor, self).__init__(key, train, indices, unknown_word, apply_func)
+#
+#     def extract(self, sequence):
+#         all_indices = []
+#         for sub_list in self._get_values(sequence):
+#             sub_list_indices = []
+#             for value in sub_list:
+#                 indices = [self._extract_single(result) for result in self._apply(value)]
+#                 sub_list_indices.append(np.array(indices, np.int32))
+#             all_indices.append(sub_list_indices)
+#         return all_indices
+
+
+class ConcatenatingListFeatureExtractor(KeyFeatureExtractor):
     def __init__(self, key, train=False, indices=None, unknown_word=UNKNOWN_WORD, apply_func=lambda x: x):
-        super(NestedListFeatureExtractor, self).__init__(key, train, indices, unknown_word, apply_func)
+        super(ConcatenatingListFeatureExtractor, self).__init__(key, train, indices, unknown_word, apply_func)
 
     def extract(self, sequence):
         all_indices = []
@@ -219,8 +234,8 @@ class NestedListFeatureExtractor(KeyFeatureExtractor):
             sub_list_indices = []
             for value in sub_list:
                 indices = [self._extract_single(result) for result in self._apply(value)]
-                sub_list_indices.append(np.array(indices, np.int32))
-            all_indices.append(sub_list_indices)
+                sub_list_indices.extend(indices)
+            all_indices.append(np.array(sub_list_indices, np.int32))
         return all_indices
 
 

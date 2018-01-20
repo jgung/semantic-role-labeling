@@ -20,8 +20,8 @@
       },
       "function": {
         "name": "ConvNet",
-        "window_size": 2,
-        "num_filters": 32,
+        "window_size": 3,
+        "num_filters": 100,
         "max_length": 15
       },
       "extractor": {
@@ -36,6 +36,24 @@
       "extractor": {
         "name": "key",
         "key": "markers"
+      }
+    },
+    {
+      "name": "phrase_chars",
+      "dim": 25,
+      "keep_prob": 0.5,
+      "left_padding": 2,
+      "right_padding": 2,
+      "rank": 3,
+      "function": {
+        "name": "ConvNet",
+        "window_size": 3,
+        "num_filters": 20,
+        "max_length": 30
+      },
+      "extractor": {
+        "name": "chars",
+        "key": "word"
       }
     }
   ]

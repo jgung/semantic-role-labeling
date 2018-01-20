@@ -14,7 +14,7 @@ KEEP_PROB_KEY = "keep_prob"
 
 
 class DBLSTMTagger(object):
-    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True, phrase=True):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
@@ -32,8 +32,6 @@ class DBLSTMTagger(object):
         self.loss = None
         self.train_step = None
         self.saver = None
-
-        self.phrase = phrase
 
         self.dropout_keys = []
         self.feed_dict = {}
@@ -77,7 +75,16 @@ class DBLSTMTagger(object):
 
                 result = embedding
                 if feature.rank == 3:
-                    result = feature.function.apply(embedding)
+                    with tf.variable_scope('{}_ops'.format(feature.name)):
+                        result = feature.function.apply(embedding)
+
+                # if feature.rank == 4:
+                #     time_major_embedding = tf.transpose(embedding, (1, 0, 2, 3, 4))
+                #     with tf.variable_scope("{}_ops".format(feature.name), reuse=tf.AUTO_REUSE):
+                #         results = tf.map_fn(lambda x: feature.function.apply(x), time_major_embedding)
+                #     result = tf.transpose(tf.stack(results), (1, 0, 2, 3))
+                #     with tf.variable_scope("{}_combine".format(feature.name)):
+                #         result = feature.function.apply(result)
 
                 if feature.keep_prob < 1:
                     keep_prob_placeholder = self._add_placeholder(feature.name + KEEP_PROB_KEY, tf.float32, dropout=True)
