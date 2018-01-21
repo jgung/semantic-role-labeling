@@ -12,7 +12,7 @@ from tqdm import tqdm
 from srl.common.constants import LABEL_KEY, LENGTH_KEY, MARKER_KEY
 from srl.common.srl_utils import configure_logger
 from srl.data.srl_feature_extractor import SrlFeatureExtractor
-from srl.data.srl_reader import chunk
+from srl.data.readers import chunk
 from srl.model.trainer import TaggerTrainer
 
 FLAGS = None

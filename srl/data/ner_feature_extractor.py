@@ -3,7 +3,7 @@ import argparse
 from features import SequenceInstanceProcessor, get_features_from_config
 from srl.common.constants import LABEL_KEY
 from srl.common.srl_utils import serialize
-from srl_reader import Conll2003Reader
+from readers import Conll2003Reader
 
 
 class NerFeatureExtractor(SequenceInstanceProcessor):
