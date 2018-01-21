@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 
-from constants import LABEL_KEY, MARKER_KEY
+from srl.common.constants import LABEL_KEY, MARKER_KEY
 
 START_OF_LABEL = "("
 END_OF_LABEL = ")"

@@ -1,10 +1,11 @@
 import argparse
 import gzip
 import json
+import logging
 import os
 import pickle
 from collections import OrderedDict
-import logging
+
 import numpy as np
 
 

@@ -3,10 +3,10 @@ import math
 import numpy as np
 import tensorflow as tf
 
-from constants import LABEL_KEY, LENGTH_KEY
-from constants import PAD_WORD, UNKNOWN_WORD, START_WORD, END_WORD
-from constants import UNKNOWN_INDEX
-from srl_utils import read_json, serialize, initialize_vectors, deserialize, read_vectors
+from srl.common.constants import END_WORD, PAD_WORD, START_WORD, UNKNOWN_WORD
+from srl.common.constants import LABEL_KEY, LENGTH_KEY
+from srl.common.constants import UNKNOWN_INDEX
+from srl.common.srl_utils import deserialize, initialize_vectors, read_json, read_vectors, serialize
 
 
 class Feature(object):

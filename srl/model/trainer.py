@@ -6,12 +6,10 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from constants import LABEL_KEY, LENGTH_KEY, END_INDEX, START_INDEX, PAD_INDEX
-from features import get_features_from_config
-from srl_utils import deserialize
-from srl_utils import read_json
+from srl.common.constants import END_INDEX, KEEP_PROB_KEY, LABEL_KEY, LENGTH_KEY, PAD_INDEX, START_INDEX
+from srl.common.srl_utils import deserialize, read_json
+from srl.data.features import get_features_from_config
 from tagger import DBLSTMTagger
-from tagger import KEEP_PROB_KEY
 
 
 class TaggerTrainer(object):

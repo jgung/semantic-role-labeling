@@ -8,9 +8,7 @@ from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn_cell import LSTMStateTuple
 from tensorflow.python.util import nest
 
-from constants import LENGTH_KEY, LABEL_KEY
-
-KEEP_PROB_KEY = "keep_prob"
+from srl.common.constants import KEEP_PROB_KEY, LABEL_KEY, LENGTH_KEY
 
 
 class DBLSTMTagger(object):
