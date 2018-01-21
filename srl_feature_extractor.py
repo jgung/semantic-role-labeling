@@ -1,15 +1,12 @@
 import argparse
 
-import features
 from constants import LABEL_KEY
-from srl_reader import ConllPhraseReader
+from features import SequenceInstanceProcessor, get_features_from_config
+from srl_reader import Conll2005Reader, Conll2012Reader, ConllPhraseReader
 from srl_utils import serialize
 
-MARKER_KEY = 'markers'
-PHRASES = 'phrases'
 
-
-class SrlFeatureExtractor(features.SequenceInstanceProcessor):
+class SrlFeatureExtractor(SequenceInstanceProcessor):
     def __init__(self, feats):
         super(SrlFeatureExtractor, self).__init__(feats)
 
@@ -29,10 +26,14 @@ class SrlFeatureExtractor(features.SequenceInstanceProcessor):
 
 
 def main(flags):
-    # reader = Conll2005Reader() if flags.dataset == 'conll05' else Conll2012Reader()
-    reader = ConllPhraseReader()
+    if flags.dataset == 'conll2012':
+        reader = Conll2012Reader()
+    elif flags.dataset == 'phrase':
+        reader = ConllPhraseReader()
+    else:
+        reader = Conll2005Reader()
 
-    feats = features.get_features_from_config(flags.config)
+    feats = get_features_from_config(flags.config)
     feature_extractor = SrlFeatureExtractor(feats=feats)
 
     train = True
@@ -56,6 +57,6 @@ if __name__ == '__main__':
     parser.add_argument('--config', required=True, type=str, help='Path to configuration json.')
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
     parser.add_argument('--vocab', required=True, type=str, help='Vocab directory path.')
-    parser.add_argument('--dataset', default='conll05', choices=['conll05', 'conll2012'], type=str,
-                        help='Dataset (conll05 or conll2012).')
+    parser.add_argument('--dataset', default='conll05', choices=['conll05', 'conll2012', 'phrase'], type=str,
+                        help='Dataset (conll05, conll2012, or phrase).')
     main(parser.parse_args())
