@@ -1,5 +1,7 @@
 import os
+import re
 from collections import defaultdict
+from itertools import izip
 
 from srl.common.constants import LABEL_KEY, MARKER_KEY
 
@@ -82,6 +84,9 @@ class ConllSrlReader(ConllReader):
         # convert from CoNLL05 labels to IOB labels
         for key, val in pred_cols.items():
             pred_cols[key] = ConllSrlReader._convert_to_iob(val)
+
+        assert len(pred_indices) == len(pred_cols), (
+            'Unexpected number of predicate columns: %d, check that predicate start and end indices are correct' % len(pred_cols))
         # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
         predicates = {i: pred_cols[index] for index, i in enumerate(pred_indices)}
         return predicates
@@ -135,25 +140,63 @@ class Conll2012Reader(ConllSrlReader):
 class ConllPhraseReader(ConllSrlReader):
     def __init__(self):
         super(ConllPhraseReader, self).__init__({-1: "phrase", 0: "id", 1: "pos", 2: "parse", 3: "word", 4: "ne", 5: "roleset",
-                                                 6: "predicate"}, pred_start=7, pred_end=1)
-        self._phrase_index = -1,
+                                                 6: "predicate"}, pred_start=7)
 
-    def read_instances(self, rows):
+    def read_files(self, path, extension, phrase_path=None, phrase_ext=".chunks"):
+        if not phrase_path:
+            phrase_path = path
+
+        if os.path.isdir(path):
+            srl_files = [input_file for input_file in sorted(os.listdir(path)) if input_file.endswith(extension)]
+            phrase_file = [re.sub(extension + "$", phrase_ext, srl_file) for srl_file in srl_files]
+            results = []
+            for srl_file, phrase_file in zip(srl_files, phrase_file):
+                results.extend(self.read_file(os.path.join(path, srl_file), os.path.join(phrase_path, phrase_file)))
+            return results
+        return self.read_file(path, re.sub(extension + "$", phrase_ext, path))
+
+    def read_file(self, path, phrase_path=None, phrase_ext="chunks"):
+        if not phrase_path:
+            phrase_path = re.sub("\\..*?$", phrase_ext, path)
+        results = []
+        if not os.path.isfile(phrase_path):
+            raise ValueError('Missing phrase file: {}'.format(phrase_path))
+        with open(path) as conll_file, open(phrase_path) as phrase_file:
+            lines, chunk_lines = [], []
+            for line, chunk_line in izip(conll_file, phrase_file):
+                line, chunk_line = line.strip(), chunk_line.strip()
+                if (not line and chunk_line) or (not chunk_line and line):
+                    raise ValueError(
+                        'Misaligned phrase and CoNLL files: {} vs. {} in {} and {}'.format(chunk_line, line, phrase_path, path))
+                if not line and lines:
+                    results.extend(self.read_instances([line.split() for line in lines], phrases=chunk_lines))
+                    lines, chunk_lines = [], []
+                    continue
+                lines.append(line)
+                chunk_lines.append(chunk_line)
+            if lines:
+                results.extend(self.read_instances([line.split() for line in lines]))
+        return results
+
+    def read_instances(self, rows, phrases=None):
+        if not phrases:
+            raise ValueError("Phrases not provided for instance: {}".format(rows))
         instances = []
         for index, labels in self.read_predicates(rows).items():
-            instance = self._read_chunks(rows, phrase_index=self._phrase_index, predicate_index=index, labels=labels)
+            instance = self._read_chunks(rows, phrase_labels=phrases, predicate_index=index, labels=labels)
             instances.append(instance)
         return instances
 
-    def _read_chunks(self, rows, phrase_index, predicate_index, labels):
+    def _read_chunks(self, rows, phrase_labels, predicate_index, labels):
         new_labels = []  # label per phrase
         predicate_chunk_index = -1  # index of phrase containing the predicate
         phrases = []  # list of phrases, each phrase represented by a list of fields from the input file
         curr_chunk = []  # the phrase currently being updated
-        curr_label = None  # the current label of the phrase
-        for token_index, row in enumerate(rows):
+        assert len(rows) == len(phrase_labels) == len(
+            labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}'.format(len(rows), len(phrase_labels),
+                                                                                           len(labels))
+        for token_index, (row, curr_label) in enumerate(zip(rows, phrase_labels)):
             prev_label = curr_label
-            curr_label = row[phrase_index]
             if _end_of_chunk(prev_label, curr_label) or (curr_chunk and (predicate_index == token_index
                                                                          or predicate_index == token_index - 1)):
                 phrases.append(curr_chunk)
