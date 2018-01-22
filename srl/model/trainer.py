@@ -27,21 +27,17 @@ class TaggerTrainer(object):
         self.extractor.load(flags.vocab)
 
         self.label_vocab = self.extractor.extractors[LABEL_KEY].indices
-
-        self.reverse_label_vocab = [None] * len(self.label_vocab)
-        for key, val in self.label_vocab.iteritems():
-            self.reverse_label_vocab[val] = key
-
-        self.transition_params = TaggerTrainer._create_transition_matrix(self.reverse_label_vocab)
+        self.reverse_label_vocab = {index: label for label, index in self.label_vocab.items()}
+        self.transition_params = TaggerTrainer._create_transition_matrix(
+            [self.reverse_label_vocab[i] for i in range(len(self.label_vocab))])
 
         if flags.train:
-            self.training_iterator = BatchIterator(deserialize(flags.train), self.batch_size, features=self.features,
+            self.training_iterator = BatchIterator(deserialize(flags.train), self.batch_size, self.features,
                                                    num_buckets=self.num_buckets, max_length=self.max_length, end_pad=self.crf)
         if flags.valid:
-            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, features=self.features,
-                                                     end_pad=self.crf)
+            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, self.features, end_pad=self.crf)
         if flags.test:
-            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, features=self.features, end_pad=self.crf)
+            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, self.features, end_pad=self.crf)
 
     def train(self):
         with tf.Session() as sess:
@@ -85,7 +81,7 @@ class TaggerTrainer(object):
     def test(self):
         with tf.Session() as sess:
             graph = self._load_graph()
-            graph.train()
+            graph.test()
             graph.saver.restore(sess, self.load_path)
             self._test(graph, sess, self.test_iterator)
 
