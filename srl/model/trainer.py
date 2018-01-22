@@ -1,6 +1,7 @@
 import logging
 import random
 import time
+import os
 
 import numpy as np
 import tensorflow as tf
@@ -47,12 +48,13 @@ class TaggerTrainer(object):
             graph = self._load_graph()
             graph.train()
             if self.load_path:
-                graph.saver.restore(sess, self.load_path)
+                logging.info('Loading saved model from %s', self.load_path)
+                graph.saver.restore(sess, tf.train.latest_checkpoint(os.path.abspath(self.load_path)))
             else:
                 sess.run(tf.global_variables_initializer())
                 graph.initialize_embeddings(sess)
 
-            current_epoch, step, max_score = 1, 0, float('-inf')
+            current_epoch, step, max_score = graph.global_step.eval() + 1, 0, float('-inf')
             patience = 0
             while current_epoch <= self.max_epochs:
                 logging.info('Epoch %d', current_epoch)
