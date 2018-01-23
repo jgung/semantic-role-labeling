@@ -17,7 +17,15 @@ function usage {
 }
 
 if [ "$#" -gt 0 ]; then
-    WSJPATH=$1
+    if [ ! -d $1 ]; then
+        echo "$1 does not exist."
+        exit 1
+    elif [ ! -d $1/parsed ]; then
+        echo "Couldn't locate directory 'parsed' in $1. Make sure you have provided the correct directory."
+        exit 1
+    else
+        WSJPATH=$1
+    fi
 else
     usage
 fi
