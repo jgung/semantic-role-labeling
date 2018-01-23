@@ -35,3 +35,7 @@ To train a model based on [Deep Semantic Role Labeling: What works and what's ne
 # extract features and train default model with CoNLL05 train/devel split
 ./data/scripts/conll05-train.sh data/datasets/conll05/ data/experiments/conll05/
 ```
+To train a phrase-constrained model, you need to override the default configuration file and mode:
+```bash
+./data/scripts/conll05-train.sh data/datasets/conll05/ data/experiments/conll05-phrase/ data/configs/phrase.json phrase
+```

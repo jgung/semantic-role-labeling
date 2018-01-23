@@ -3,14 +3,16 @@
 PROGRAM_NAME=$0
 DATA_PATH=$1
 OUTPUT_PATH=$2
-TRAIN_FILE="train-set.conll"
-DEVEL_FILE="dev-set.conll"
+TRAIN_FILE="train-set"
+DEVEL_FILE="dev-set"
+MODE=word
 
 function usage {
-    echo "usage: $PROGRAM_NAME [[[input] output] config]"
+    echo "usage: $PROGRAM_NAME [[[[input] output] config] mode]"
     echo "  input   root directory for SRL train/dev/test files"
     echo "  output  directory for output files used during training, such as the resulting models and checkpoints"
     echo "  config  (optional) json file used to configure features and network parameters"
+    echo "  mode    (optional) mode, 'word' by default, or 'phrase' for phrase-constrained model"
     exit 1
 }
 
@@ -23,19 +25,34 @@ else
     printf "Using default config at %s since none was provided.\n" ${CONFIG}
 fi
 
+if [[ "$#" -eq 4 ]]; then
+    MODE=$4
+fi
+
 extract_features() {
     if [ -f "$OUTPUT_PATH/$2.pkl" ]; then
         printf "Skipping %s since it already exists.\n" "$OUTPUT_PATH$2.pkl"
         return 0
     fi
-    printf "Extracting features from data at %s and saving to %s\n" "$DATA_PATH$2" "$OUTPUT_PATH$2.pkl"
-    python ./srl/data/srl_feature_extractor.py \
+    printf "Extracting features from data at %s.conll and saving to %s\n" "$DATA_PATH$2" "$OUTPUT_PATH$2.pkl"
+
+    echo "Training in $MODE mode..."
+    FEAT_ARGS="./srl/data/srl_feature_extractor.py \
         --mode $1 \
-        --input "$DATA_PATH/$2" \
-        --output "$OUTPUT_PATH/$2.pkl" \
+        --input $DATA_PATH/$2.conll \
+        --output $OUTPUT_PATH/$2.pkl \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
-        --dataset conll05
+        --dataset conll05"
+    if [[ ${MODE} == word ]]; then
+        python ${FEAT_ARGS}
+    elif [[ ${MODE} == phrase ]]; then
+        python ${FEAT_ARGS} --phrase_input "data/datasets/phrases/conll05/$2.phrases" --phrase_ext phrases
+    else
+        echo "Unrecognized mode: $MODE"
+        return 1
+    fi
+
     if [[ $? != 0 ]]; then
         echo "The last command exited with a non-zero status" 1>&2;
         return 1

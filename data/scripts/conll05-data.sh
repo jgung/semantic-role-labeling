@@ -49,12 +49,12 @@ checkdownload() {
 retrieve_words() {
     section_type=$1
     declare -a sections=("${!2}")
-    echo "Retrieving words from PTB $section_type sections ${sections[@]}"
+    echo "Extracting words from PTB $section_type sections ${sections[@]}"
     checkdir ${CONLL05_PATH}/${section_type}/words
     for section in "${sections[@]}"
     do
         if [ ! -f "$CONLL05_PATH/${section_type}/words/${section_type}.$section.words.gz" ]; then
-            echo ${section}
+            echo ...${section}
             cat ${WSJPATH}/parsed/mrg/wsj/${section}/* | wsj-removetraces.pl | wsj-to-se.pl -w 1 | awk '{print $1}' | \
                 gzip > "$CONLL05_PATH/${section_type}/words/${section_type}.$section.words.gz"
         else

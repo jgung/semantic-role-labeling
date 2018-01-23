@@ -137,23 +137,21 @@ class Conll2012Reader(ConllSrlReader):
                                               pred_start=11, pred_end=1)
 
 
-class ConllPhraseReader(ConllSrlReader):
+class ConllPhraseReader(Conll2005Reader):
     def __init__(self):
-        super(ConllPhraseReader, self).__init__({-1: "phrase", 0: "id", 1: "pos", 2: "parse", 3: "word", 4: "ne", 5: "roleset",
-                                                 6: "predicate"}, pred_start=7)
+        super(ConllPhraseReader, self).__init__()
 
     def read_files(self, path, extension, phrase_path=None, phrase_ext=".chunks"):
-        if not phrase_path:
-            phrase_path = path
-
         if os.path.isdir(path):
+            if not phrase_path:
+                phrase_path = path
             srl_files = [input_file for input_file in sorted(os.listdir(path)) if input_file.endswith(extension)]
             phrase_file = [re.sub(extension + "$", phrase_ext, srl_file) for srl_file in srl_files]
             results = []
             for srl_file, phrase_file in zip(srl_files, phrase_file):
                 results.extend(self.read_file(os.path.join(path, srl_file), os.path.join(phrase_path, phrase_file)))
             return results
-        return self.read_file(path, re.sub(extension + "$", phrase_ext, path))
+        return self.read_file(path, phrase_path, phrase_ext)
 
     def read_file(self, path, phrase_path=None, phrase_ext="chunks"):
         if not phrase_path:
