@@ -35,7 +35,6 @@ class Feature(object):
         self.embedding = None
         self.left_padding = 0
         self.right_padding = 0
-        self.max_length = -1
 
     def vocab_size(self):
         return len(self.extractor.indices)

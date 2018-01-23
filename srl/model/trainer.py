@@ -99,12 +99,16 @@ class TaggerTrainer(object):
         self.lstm_num_layers = conf['lstm_num_layers']
         self.max_length = conf['max_length']
         self.num_buckets = conf['num_buckets']
-        self.dblstm = conf.get('dblstm') or False
+        self.dblstm = conf.get('dblstm', False)
+        self.orthonormal_init = conf.get('orthonormal_init', True)
+        self.recurrent_dropout = conf.get('recurrent_dropout', True)
 
     def _load_graph(self):
         return DBLSTMTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
                             state_dim=self.lstm_hidden_dim, transition_params=self.transition_params,
-                            crf=self.crf, dblstm=self.dblstm)
+                            crf=self.crf, dblstm=self.dblstm,
+                            orthonormal_init=self.orthonormal_init,
+                            recurrent_dropout=self.recurrent_dropout)
 
     @staticmethod
     def _create_transition_matrix(labels):

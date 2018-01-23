@@ -36,7 +36,6 @@ extract_features() {
     fi
     printf "Extracting features from data at %s.conll and saving to %s\n" "$DATA_PATH$2" "$OUTPUT_PATH$2.pkl"
 
-    echo "Training in $MODE mode..."
     FEAT_ARGS="./srl/data/srl_feature_extractor.py \
         --mode $1 \
         --input $DATA_PATH/$2.conll \

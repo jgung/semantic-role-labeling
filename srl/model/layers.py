@@ -4,12 +4,13 @@ from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn_cell import LSTMStateTuple
+from tensorflow.python.ops.rnn_cell_impl import _linear
 from tensorflow.python.util import nest
 
 
 def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
-    def _reverse(input_, seq_lengths):
-        return array_ops.reverse_sequence(input=input_, seq_lengths=seq_lengths, seq_dim=1, batch_dim=0)
+    def _reverse(_input, seq_lengths):
+        return array_ops.reverse_sequence(input=_input, seq_lengths=seq_lengths, seq_dim=1, batch_dim=0)
 
     outputs, state = None, None
     with vs.variable_scope("dblstm"):
@@ -29,8 +30,16 @@ def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
 
 
 class HighwayLSTMCell(LSTMCell):
-    def __init__(self, num_units, initializer=None):
+    def __init__(self, num_units, initializer=None, separate_init=True):
+        """
+        Initialize an LSTM cell with highway connections as described in "Deep Semantic Role Labeling: What works and what's next"
+        (He et al. 2017).
+        :param num_units: number of LSTM units in this cell
+        :param initializer: weight initializer
+        :param separate_init: initialize each weight matrix individually
+        """
         super(HighwayLSTMCell, self).__init__(num_units=num_units, initializer=initializer)
+        self.separate_init = separate_init
 
     def call(self, inputs, state):
         (c_prev, m_prev) = state
@@ -41,10 +50,17 @@ class HighwayLSTMCell(LSTMCell):
         with vs.variable_scope("highway_lstm_cell", initializer=self._initializer, reuse=self._reuse):
             # i = input_gate, j = new_input, f = forget_gate, o = output_gate, r = transform_gate
             with vs.variable_scope('hidden_weights'):
-                hidden_matrix = linear_block_initialization(m_prev, 5 * [self._num_units], bias=False)
+                if self.separate_init:
+                    hidden_matrix = linear_block_initialization(m_prev, 5 * [self._num_units], bias=False)
+                else:
+                    hidden_matrix = _linear(m_prev, 5 * self._num_units, bias=False)
+
             ih, jh, fh, oh, rh = array_ops.split(value=hidden_matrix, num_or_size_splits=5, axis=1)
             with vs.variable_scope('input_weights'):
-                input_matrix = linear_block_initialization(inputs, 6 * [self._num_units], bias=True)
+                if self.separate_init:
+                    input_matrix = linear_block_initialization(inputs, 6 * [self._num_units], bias=True)
+                else:
+                    input_matrix = _linear(m_prev, 6 * self._num_units, bias=False)
             ix, jx, fx, ox, rx, hx = array_ops.split(value=input_matrix, num_or_size_splits=6, axis=1)
 
             i = sigmoid(ih + ix)

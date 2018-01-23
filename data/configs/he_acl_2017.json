@@ -7,6 +7,8 @@
   "lstm_num_layers": 8,
   "lstm_hidden_dim": 300,
   "dblstm": true,
+  "orthonormal_init": true,
+  "recurrent_dropout": true,
   "features": [
     {
       "name": "words",

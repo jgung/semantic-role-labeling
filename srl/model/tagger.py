@@ -7,7 +7,8 @@ from srl.model.layers import HighwayLSTMCell, deep_bidirectional_dynamic_rnn
 
 
 class DBLSTMTagger(object):
-    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True):
+    def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True,
+                 orthonormal_init=True, recurrent_dropout=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
@@ -17,6 +18,8 @@ class DBLSTMTagger(object):
         self.transition_params = transition_params
         self.crf = crf
         self.dblstm = dblstm
+        self.orthonormal_init = orthonormal_init
+        self.recurrent_dropout = recurrent_dropout
 
         self._embedding_placeholder = {}
         self._embedding_init = {}
@@ -86,8 +89,12 @@ class DBLSTMTagger(object):
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):
-        return DropoutWrapper(HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer()),
-                              variational_recurrent=True, dtype=tf.float32, output_keep_prob=self.dropout_keep_prob)
+        if self.orthonormal_init:
+            cell = HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer(), separate_init=True)
+        else:
+            cell = HighwayLSTMCell(self.state_dim, separate_init=False)
+        return DropoutWrapper(cell, variational_recurrent=self.recurrent_dropout, dtype=tf.float32,
+                              output_keep_prob=self.dropout_keep_prob)
 
     def inference_layer(self, inputs):
         if self.dblstm:
