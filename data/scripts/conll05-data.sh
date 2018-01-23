@@ -101,8 +101,8 @@ make_dataset() {
         fi
     done
 
-    echo "Generating file $OUTPUT_FILE.conll"
-    ${ZCAT} tmp/$$.section* > ${SRLPATH}/${OUTPUT_FILE}.conll
+    echo "Generating file $OUTPUT_FILE"
+    ${ZCAT} tmp/$$.section* > ${SRLPATH}/${OUTPUT_FILE}
     echo "Cleaning temporary files"
     rm -f tmp/$$*
 }
