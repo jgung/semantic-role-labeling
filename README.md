@@ -12,10 +12,15 @@ This repository contains the following:
 * virtualenv
 ### Virtualenv Installation
 ```bash
-virtualenv ~/.virtualenvs/tf
-source ~/.virtualenvs/tf/bin/activate
+virtualenv ~/.venvs/tf-srl
+source ~/.venvs/tf-srl/bin/activate
 cd semantic-role-labeling
 pip install -r requirements.txt
+```
+### Download word embeddings
+We use [GloVe](https://nlp.stanford.edu/projects/glove/) 100-dimensional vectors trained on 6B tokens. They can be downloaded with the following:
+```bash
+./data/scripts/get-resources.sh
 ```
 ## Usage
 ### Training CoNLL-2005
