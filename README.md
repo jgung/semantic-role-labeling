@@ -18,14 +18,15 @@ cd semantic-role-labeling
 pip install -r requirements.txt
 ```
 ## Usage
-### Prepare Training Data
-```bash
-python srl_feature_extractor.py --mode new --input data/datasets/conll2005/train --output data/datasets/conll2005/train.pkl --vocab data/datasets/conll2005 --config data/configs/he_acl_2017.json
-python srl_feature_extractor.py --mode update --input data/datasets/conll2005/dev --output data/datasets/conll2005/dev.pkl --vocab data/datasets/conll2005 --config data/configs/he_acl_2017.json
-python srl_feature_extractor.py --mode update --input data/datasets/conll2005/test --output data/datasets/conll2005/test.pkl --vocab data/datasets/conll2005 --config data/configs/he_acl_2017.json
+### Training CoNLL-2005
+In order to generate SRL training data for [CoNLL-2005](http://www.lsi.upc.edu/~srlconll/soft.html), you will need to download
+and extract the PTB corpus [LDC99T42](https://catalog.ldc.upenn.edu/ldc99t42) (which is not publicly available).
 
-```
-### Train Model
+To train a model based on [Deep Semantic Role Labeling: What works and what's next](https://homes.cs.washington.edu/~luheng/files/acl2017_hllz.pdf)
+(He et al. 2017), you can then use the following scripts:
 ```bash
-python srl_trainer.py --train data/datasets/conll2005/train.pkl --valid data/datasets/conll2005/dev.pkl --vocab data/datasets/conll2005 --script data/scripts/srl-eval.pl --config data/configs/he_acl_2017.json --save data/models/conll2005 --log data/logs/log.txt
+# download and prepare training data (only needs to be run once)
+./data/scripts/conll05-data.sh /path/to/ptb/
+# extract features and train default model with CoNLL05 train/devel split
+./data/scripts/conll05-train.sh data/datasets/conll05/ data/experiments/conll05/
 ```

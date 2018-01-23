@@ -127,8 +127,8 @@ class Conll2003Reader(ConllReader):
 
 class Conll2005Reader(ConllSrlReader):
     def __init__(self):
-        super(Conll2005Reader, self).__init__({0: "id", 1: "pos", 2: "parse", 3: "word", 4: "ne", 5: "roleset", 6: "predicate"},
-                                              pred_start=7)
+        super(Conll2005Reader, self).__init__({0: "word", 1: "pos", 2: "parse", 3: "ne", 4: "roleset", 5: "predicate"},
+                                              pred_start=6)
 
 
 class Conll2012Reader(ConllSrlReader):
