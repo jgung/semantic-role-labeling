@@ -63,7 +63,7 @@ class HighwayLSTMCell(LSTMCell):
                 if self.separate_init:
                     input_matrix = linear_block_initialization(inputs, num_weights * [self._num_units], bias=True)
                 else:
-                    input_matrix = _linear(m_prev, num_weights * self._num_units, bias=False)
+                    input_matrix = _linear(inputs, num_weights * self._num_units, bias=False)
 
             if self.highway:
                 ih, jh, fh, oh, rh = array_ops.split(value=hidden_matrix, num_or_size_splits=5, axis=1)
