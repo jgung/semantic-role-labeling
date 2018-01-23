@@ -9,6 +9,7 @@
   "dblstm": true,
   "orthonormal_init": true,
   "recurrent_dropout": true,
+  "highway": false,
   "features": [
     {
       "name": "words",

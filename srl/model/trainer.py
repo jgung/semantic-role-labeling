@@ -102,13 +102,15 @@ class TaggerTrainer(object):
         self.dblstm = conf.get('dblstm', False)
         self.orthonormal_init = conf.get('orthonormal_init', True)
         self.recurrent_dropout = conf.get('recurrent_dropout', True)
+        self.highway = conf.get('highway', True)
 
     def _load_graph(self):
         return DBLSTMTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
                             state_dim=self.lstm_hidden_dim, transition_params=self.transition_params,
                             crf=self.crf, dblstm=self.dblstm,
                             orthonormal_init=self.orthonormal_init,
-                            recurrent_dropout=self.recurrent_dropout)
+                            recurrent_dropout=self.recurrent_dropout,
+                            highway=self.highway)
 
     @staticmethod
     def _create_transition_matrix(labels):

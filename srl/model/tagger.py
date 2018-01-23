@@ -8,7 +8,7 @@ from srl.model.layers import HighwayLSTMCell, deep_bidirectional_dynamic_rnn
 
 class DBLSTMTagger(object):
     def __init__(self, features, num_layers, state_dim, num_classes, transition_params=None, crf=True, dblstm=True,
-                 orthonormal_init=True, recurrent_dropout=True):
+                 orthonormal_init=True, recurrent_dropout=True, highway=True):
         super(DBLSTMTagger, self).__init__()
         self.features = features
 
@@ -20,6 +20,7 @@ class DBLSTMTagger(object):
         self.dblstm = dblstm
         self.orthonormal_init = orthonormal_init
         self.recurrent_dropout = recurrent_dropout
+        self.highway = highway
 
         self._embedding_placeholder = {}
         self._embedding_init = {}
@@ -90,9 +91,10 @@ class DBLSTMTagger(object):
 
     def _dblstm_cell(self):
         if self.orthonormal_init:
-            cell = HighwayLSTMCell(self.state_dim, initializer=tf.orthogonal_initializer(), separate_init=True)
+            cell = HighwayLSTMCell(self.state_dim, highway=self.highway, initializer=tf.orthogonal_initializer(),
+                                   separate_init=True)
         else:
-            cell = HighwayLSTMCell(self.state_dim, separate_init=False)
+            cell = HighwayLSTMCell(self.state_dim, highway=self.highway, separate_init=False)
         return DropoutWrapper(cell, variational_recurrent=self.recurrent_dropout, dtype=tf.float32,
                               output_keep_prob=self.dropout_keep_prob)
 
