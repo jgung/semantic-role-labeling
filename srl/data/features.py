@@ -306,11 +306,12 @@ class SequenceInstanceProcessor(object):
                 feature.dim = feature.embedding.shape[1]
         self.extractors[LABEL_KEY].indices = deserialize(in_path, LABEL_KEY)
 
-    def _init_vocabularies(self):
-        for extractor in self.extractors.values():
-            extractor.train = True
+    def _init_vocabularies(self, force=False):
+        self.train()
         for feature in self.features:
             if feature.initializer:
+                if feature.name in self.resources and not force:  # skip initialization of already-initialized resources
+                    continue
                 path = feature.initializer['initializer_path']
                 vectors, dim = read_vectors(path, unk_word=feature.extractor.unknown_word, pad_word=PAD_WORD)
                 self.resources[feature.name] = vectors, dim
