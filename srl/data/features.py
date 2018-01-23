@@ -55,6 +55,11 @@ def get_feature(feat_dict):
                 return ConcatenatingListFeatureExtractor(key=key, apply_func=lambda x: list(x))
             if extractor_name == 'key':
                 return KeyFeatureExtractor(key=key)
+            if extractor_name == 'dist':
+                target = extractor_dict['target']
+                max_dist = extractor_dict.get('max_dist', 1)
+                absolute = extractor_dict.get('absolute', False)
+                return DistanceFeatureExtractor(key=key, target=target, max_dist=max_dist, absolute=absolute)
             if extractor_name == 'lower':
                 if _rank == 3:
                     return ListFeatureExtractor(key=key, apply_func=lambda x: [word.lower() for word in x])
@@ -194,6 +199,29 @@ class KeyFeatureExtractor(FeatureExtractor):
 
     def _apply(self, value):
         return self.apply_func(value)
+
+
+class DistanceFeatureExtractor(KeyFeatureExtractor):
+    def __init__(self, key, target, max_dist=1, absolute=False, train=False, indices=None, unknown_word=UNKNOWN_WORD,
+                 apply_func=lambda x: x):
+        super(DistanceFeatureExtractor, self).__init__(key=key, train=train, indices=indices, unknown_word=unknown_word,
+                                                       apply_func=apply_func)
+        self.target = target
+        self.max_dist = max_dist
+        self.absolute = absolute
+
+    def _get_values(self, sequence):
+        def dist(current_index, target_index):
+            distance = current_index - target_index
+            if self.absolute:
+                distance = abs(distance)
+            elif distance < 0:
+                return max(-self.max_dist, distance)
+            return min(self.max_dist, distance)
+
+        values = sequence[self.key]
+        index = values.index(self.target)
+        return [dist(i, index) for i in range(len(values))]
 
 
 class ListFeatureExtractor(KeyFeatureExtractor):
