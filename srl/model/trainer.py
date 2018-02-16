@@ -151,6 +151,8 @@ class BatchIterator(object):
             bucket = random.choice([i for (i, p) in enumerate(self.pointer.tolist()) if p + 1 < self.bucket_size])
 
             batch = self.data[bucket][self.pointer[bucket]:self.pointer[bucket] + self.batch_size]
+            if len(batch) == 0:
+                break
             self.pointer[bucket] += len(batch)
             yield self._prepare_batch(batch)
 

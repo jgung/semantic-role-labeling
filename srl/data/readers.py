@@ -61,7 +61,7 @@ class ConllSrlReader(ConllReader):
         self._pred_start = pred_start
         self._pred_end = pred_end
         self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
-        self.is_predicate = lambda x: x is not '-'
+        self.is_predicate = lambda x: x[self._pred_index] is not '-'
 
     def read_instances(self, rows):
         instances = []
@@ -77,7 +77,7 @@ class ConllSrlReader(ConllReader):
         pred_indices = []
         pred_cols = defaultdict(list)
         for token_idx, row_fields in enumerate(rows):
-            if self.is_predicate(row_fields[self._pred_index]):
+            if self.is_predicate(row_fields):
                 pred_indices.append(token_idx)
             for index in range(self._pred_start, len(row_fields) - self._pred_end):
                 pred_cols[index - self._pred_start].append(row_fields[index])
@@ -135,6 +135,7 @@ class Conll2012Reader(ConllSrlReader):
     def __init__(self):
         super(Conll2012Reader, self).__init__({3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"},
                                               pred_start=11, pred_end=1)
+        self.is_predicate = lambda x: x[self._pred_index] is not '-' and x[7] is not '-'
 
 
 class ConllPhraseReader(Conll2005Reader):
