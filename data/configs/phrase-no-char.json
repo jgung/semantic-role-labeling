@@ -9,15 +9,22 @@
   "dblstm": true,
   "orthonormal_init": true,
   "recurrent_dropout": true,
-  "highway": true,
+  "highway": false,
   "features": [
     {
       "name": "words",
       "base": true,
-      "dim": -1,
+      "rank": 3,
+      "dim": 100,
       "initializer": {
         "pkl_path": "vectors.pkl",
         "initializer_path": "data/vectors/glove.6B.100d.txt"
+      },
+      "function": {
+        "name": "ConvNet",
+        "window_size": 3,
+        "num_filters": 128,
+        "max_length": 20
       },
       "extractor": {
         "name": "lower",
@@ -26,7 +33,8 @@
     },
     {
       "name": "markers",
-      "dim": 100,
+      "rank": 2,
+      "dim": 16,
       "extractor": {
         "name": "key",
         "key": "markers"

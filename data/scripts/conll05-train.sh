@@ -25,8 +25,12 @@ else
     printf "Using default config at %s since none was provided.\n" ${CONFIG}
 fi
 
-if [[ "$#" -eq 4 ]]; then
+if [[ "$#" -gt 3 ]]; then
     MODE=$4
+fi
+
+if [[ "$#" -gt 4 ]]; then
+    TRAIN_FILE=$5
 fi
 
 extract_features() {
@@ -66,7 +70,8 @@ train_model() {
         --valid "$OUTPUT_PATH/$DEVEL_FILE.pkl" \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
-        --script ./data/scripts/srl-eval.pl
+        --script ./data/scripts/srl-eval.pl \
+        --log "$OUTPUT_PATH/srl-$MODE.log"
 }
 
 VOCAB_PATH="$OUTPUT_PATH/vocab"

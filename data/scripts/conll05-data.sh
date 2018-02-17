@@ -2,65 +2,38 @@
 
 PROGRAM_NAME=$0
 
-TRAIN_SECTIONS=(02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21)
 DEVEL_SECTIONS=(24)
 TEST_WSJ=(wsj)
 TEST_BROWN=(brown)
 
-SRLPATH="./data/datasets/conll05"
-CONLL05_PATH="$SRLPATH/conll05st-release"
-
 function usage {
-    echo "usage: $PROGRAM_NAME [wsj_path]"
-    echo "  wsj_path    path to root directory of Penn Treebank dataset"
+    echo "usage: $PROGRAM_NAME [input_path] [output_path] [sections]"
+    echo "  input_path    path to output of download script"
+    echo "  output_path   name of output training file"
+    echo "  sections      optional path to newline-separated sections for training data"
     exit 1
 }
 
 if [ "$#" -gt 0 ]; then
-    if [ ! -d $1 ]; then
-        echo "$1 does not exist."
-        exit 1
-    elif [ ! -d $1/parsed ]; then
-        echo "Couldn't locate directory 'parsed' in $1. Make sure you have provided the correct directory."
-        exit 1
+    INPUT_PATH=$1
+    OUTPUT_PATH=$2
+    if [ "$#" -gt 2 ]; then
+        echo "Reading training sections at $3."
+        declare -a TRAIN_SECTIONS
+        readarray -t TRAIN_SECTIONS < $3
     else
-        WSJPATH=$1
+        TRAIN_SECTIONS=(02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21)
     fi
 else
     usage
 fi
 
+CONLL05_PATH="$INPUT_PATH/conll05st-release"
+
 checkdir() {
     if [ ! -d $1 ]; then
         mkdir -p $1
     fi
-}
-
-# Download data
-checkdownload() {
-    if [ ! -f "$SRLPATH/$1" ]; then
-        wget -O "$SRLPATH/$1" $2
-    else
-        echo "File $1 already exists, skipping download"
-    fi
-    tar xf "$SRLPATH/$1" -C "$SRLPATH"
-}
-
-retrieve_words() {
-    section_type=$1
-    declare -a sections=("${!2}")
-    echo "Extracting words from PTB $section_type sections ${sections[@]}"
-    checkdir ${CONLL05_PATH}/${section_type}/words
-    for section in "${sections[@]}"
-    do
-        if [ ! -f "$CONLL05_PATH/${section_type}/words/${section_type}.$section.words.gz" ]; then
-            echo ...${section}
-            cat ${WSJPATH}/parsed/mrg/wsj/${section}/* | wsj-removetraces.pl | wsj-to-se.pl -w 1 | awk '{print $1}' | \
-                gzip > "$CONLL05_PATH/${section_type}/words/${section_type}.$section.words.gz"
-        else
-            echo "Skipping retrieving words for section $section (file already exists)"
-        fi
-    done
 }
 
 make_dataset() {
@@ -87,7 +60,7 @@ make_dataset() {
         ZCAT=zcat
     fi
 
-    OUTPUT_FILE=${SRLPATH}/${OUTPUT_FILE}.conll
+    OUTPUT_FILE=${INPUT_PATH}/${OUTPUT_FILE}.conll
     if [[ -f ${OUTPUT_FILE} ]]; then
         echo "Skipping processing, output file $OUTPUT_FILE already exists"
         return 0
@@ -115,18 +88,7 @@ make_dataset() {
     rm -f tmp/$$*
 }
 
-export PERL5LIB="$SRLPATH/srlconll-1.1/lib:$PERL5LIB"
-export PATH="$SRLPATH/srlconll-1.1/bin:$PATH"
-
-checkdir ${SRLPATH}
-
-checkdownload srlconll-1.1.tgz http://www.lsi.upc.edu/~srlconll/srlconll-1.1.tgz
-checkdownload conll05st-release.tar.gz http://www.lsi.upc.edu/~srlconll/conll05st-release.tar.gz
-checkdownload conll05st-tests.tar.gz http://www.lsi.upc.edu/~srlconll/conll05st-tests.tar.gz
-
-retrieve_words train TRAIN_SECTIONS[@] && retrieve_words devel DEVEL_SECTIONS[@]
-
-make_dataset TRAIN_SECTIONS[@] train-set ${CONLL05_PATH}/train train
+make_dataset TRAIN_SECTIONS[@] ${OUTPUT_PATH} ${CONLL05_PATH}/train train
 make_dataset DEVEL_SECTIONS[@] dev-set ${CONLL05_PATH}/devel devel
 make_dataset TEST_WSJ[@] test-wsj ${CONLL05_PATH}/test.wsj test
 make_dataset TEST_BROWN[@] test-brown ${CONLL05_PATH}/test.brown test
