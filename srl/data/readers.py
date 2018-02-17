@@ -174,7 +174,7 @@ class ConllPhraseReader(Conll2005Reader):
                 lines.append(line)
                 chunk_lines.append(chunk_line)
             if lines:
-                results.extend(self.read_instances([line.split() for line in lines]))
+                results.extend(self.read_instances([line.split() for line in lines], phrases=chunk_lines))
         return results
 
     def read_instances(self, rows, phrases=None):
