@@ -14,6 +14,9 @@ SINGLE = "S-"
 END = "E-"
 OUT = "O"
 
+PREDICATE_SYMBOL = "<PREDICATE>"
+WORD_KEY = "word"
+
 
 class ConllReader(object):
     def __init__(self, index_field_map):
@@ -70,6 +73,7 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[WORD_KEY] = [index == key and PREDICATE_SYMBOL or word for index, word in enumerate(instance[WORD_KEY])]
             instances.append(instance)
         return instances
 
