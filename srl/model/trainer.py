@@ -65,17 +65,19 @@ class TaggerTrainer(object):
                 sess.run(graph.global_step_increment)  # increment global step variable associated with graph
                 logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
 
-                score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
-                if score >= max_score:
-                    max_score = score
-                    patience = 0
-                    if self.save_path:
-                        save_path = graph.saver.save(sess, self.save_path, global_step=graph.global_step)
-                        logging.info("Model to file: %s" % save_path)
-                else:
-                    patience += 1
+                if current_epoch % self.eval_every == 0:
+                    score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
+                    if score >= max_score:
+                        max_score = score
+                        patience = 0
+                        if self.save_path:
+                            save_path = graph.saver.save(sess, self.save_path, global_step=graph.global_step)
+                            logging.info("Model to file: %s" % save_path)
+                    else:
+                        patience += 1
 
-                logging.info('Epoch %d F1: %f (best: %f, %d epoch(s) ago)', current_epoch, score, max_score, patience)
+                    logging.info('Epoch %d F1: %f (best: %f, %d epoch(s) ago)', current_epoch, score, max_score, patience)
+
                 current_epoch += 1
 
     def test(self):
@@ -103,6 +105,7 @@ class TaggerTrainer(object):
         self.orthonormal_init = conf.get('orthonormal_init', True)
         self.recurrent_dropout = conf.get('recurrent_dropout', True)
         self.highway = conf.get('highway', True)
+        self.eval_every = conf.get('eval_every', 1)
 
     def _load_graph(self):
         return DBLSTMTagger(features=self.features, num_classes=len(self.label_vocab), num_layers=self.lstm_num_layers,
