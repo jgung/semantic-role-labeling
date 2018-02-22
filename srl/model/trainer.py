@@ -44,8 +44,9 @@ class TaggerTrainer(object):
             graph = self._load_graph()
             graph.train()
             if self.load_path:
-                logging.info('Loading saved model from %s', self.load_path)
-                graph.saver.restore(sess, tf.train.latest_checkpoint(os.path.abspath(self.load_path)))
+                self.load_path = os.path.abspath(os.path.normpath(self.load_path))
+                logging.info('Loading most recent checkpoint from %s', self.load_path)
+                graph.saver.restore(sess, tf.train.latest_checkpoint(self.load_path))
             else:
                 sess.run(tf.global_variables_initializer())
                 graph.initialize_embeddings(sess)
@@ -67,12 +68,12 @@ class TaggerTrainer(object):
 
                 if current_epoch % self.eval_every == 0:
                     score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
-                    if score >= max_score:
+                    if score > max_score:
                         max_score = score
                         patience = 0
                         if self.save_path:
-                            save_path = graph.saver.save(sess, self.save_path, global_step=graph.global_step)
-                            logging.info("Model to file: %s" % save_path)
+                            logging.info("Saving model to %s" % os.path.normpath(self.save_path))
+                            graph.saver.save(sess, self.save_path, global_step=graph.global_step)
                     else:
                         patience += 1
 
@@ -93,14 +94,14 @@ class TaggerTrainer(object):
     def _read_conf(self, conf_json):
         conf = read_json(conf_json)
         logging.info(conf)
-        self.crf = conf.get('crf')
-        self.max_epochs = conf['max_epochs']
-        self.batch_size = conf['batch_size']
-        self.keep_prob = conf['keep_prob']
-        self.lstm_hidden_dim = conf['lstm_hidden_dim']
-        self.lstm_num_layers = conf['lstm_num_layers']
-        self.max_length = conf['max_length']
-        self.num_buckets = conf['num_buckets']
+        self.crf = conf.get('crf', False)
+        self.max_epochs = conf.get('max_epochs', 999)
+        self.batch_size = conf.get('batch_size', 64)
+        self.keep_prob = conf.get('keep_prob', 1)
+        self.lstm_hidden_dim = conf.get('lstm_hidden_dim', 128)
+        self.lstm_num_layers = conf.get('lstm_num_layers', 2)
+        self.max_length = conf.get('max_length', 100)
+        self.num_buckets = conf.get('num_buckets', 100)
         self.dblstm = conf.get('dblstm', False)
         self.orthonormal_init = conf.get('orthonormal_init', True)
         self.recurrent_dropout = conf.get('recurrent_dropout', True)

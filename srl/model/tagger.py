@@ -157,8 +157,9 @@ class DBLSTMTagger(object):
     def test(self):
         inputs = self.embedding_layer()
         self.inference_layer(inputs)
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(max_to_keep=2)
 
     def train(self):
         self.test()
         self.add_train_ops()
+        self.saver = tf.train.Saver(max_to_keep=2)

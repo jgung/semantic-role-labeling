@@ -1,4 +1,5 @@
 import argparse
+from os import path
 
 from features import SequenceInstanceProcessor, get_features_from_config
 from srl.common.constants import LABEL_KEY
@@ -26,6 +27,11 @@ class SrlFeatureExtractor(SequenceInstanceProcessor):
 
 
 def main(flags):
+    flags.input = path.normpath(flags.input)
+    flags.vocab = path.normpath(flags.vocab)
+    flags.output = path.normpath(flags.output)
+    flags.config = path.normpath(flags.config)
+
     if flags.dataset == 'conll2012':
         raw_instances = Conll2012Reader().read_files(flags.input, flags.ext)
     elif flags.dataset == 'phrase' or flags.phrase_input:
