@@ -65,13 +65,14 @@ extract_features() {
 train_model() {
     LOAD=""
     if [ -f "$OUTPUT_PATH/checkpoint" ]; then
-        printf "Continuing training from checkpoint file at %s" "$OUTPUT_PATH/checkpoint"
+        printf "Continuing training from checkpoint file at %s" "${OUTPUT_PATH%/}/checkpoint"
         LOAD="--load $OUTPUT_PATH"
     fi
     python ./srl/srl_trainer.py \
         --save "$OUTPUT_PATH/model-checkpoint" \
         --train "$OUTPUT_PATH/$TRAIN_FILE.pkl" \
         --valid "$OUTPUT_PATH/$DEVEL_FILE.pkl" \
+        --output "$OUTPUT_PATH/$DEVEL_FILE.predictions.txt" \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
         --script ./data/scripts/srl-eval.pl \

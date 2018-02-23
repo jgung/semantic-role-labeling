@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from itertools import izip
 
-from srl.common.constants import LABEL_KEY, MARKER_KEY
+from srl.common.constants import LABEL_KEY, MARKER_KEY, INSTANCE_INDEX, SENTENCE_INDEX
 
 START_OF_LABEL = "("
 END_OF_LABEL = ")"
@@ -62,6 +62,8 @@ class ConllSrlReader(ConllReader):
         self._pred_end = pred_end
         self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
         self.is_predicate = lambda x: x[self._pred_index] is not '-'
+        self.prop_count = 0
+        self.sentence_count = 0
 
     def read_instances(self, rows):
         instances = []
@@ -70,7 +72,11 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def read_predicates(self, rows):
@@ -183,7 +189,11 @@ class ConllPhraseReader(Conll2005Reader):
         instances = []
         for index, labels in self.read_predicates(rows).items():
             instance = self._read_chunks(rows, phrase_labels=phrases, predicate_index=index, labels=labels)
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def _read_chunks(self, rows, phrase_labels, predicate_index, labels):

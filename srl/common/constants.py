@@ -12,3 +12,9 @@ KEEP_PROB_KEY = "keep_prob"
 LABEL_KEY = "labels"
 LENGTH_KEY = "lengths"
 MARKER_KEY = "markers"
+WORDS = "words"
+
+INSTANCE_INDEX = "instance_index"
+SENTENCE_INDEX = "sentence_index"
+
+NON_PREDICATE = "-"

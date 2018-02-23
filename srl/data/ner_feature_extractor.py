@@ -1,34 +1,14 @@
 import argparse
 
 from features import SequenceInstanceProcessor, get_features_from_config
-from srl.common.constants import LABEL_KEY
-from srl.common.srl_utils import serialize
 from readers import Conll2003Reader
-
-
-class NerFeatureExtractor(SequenceInstanceProcessor):
-    def __init__(self, feats):
-        super(NerFeatureExtractor, self).__init__(feats)
-
-    def read_instances(self, sentences, train=False):
-        """
-        Read NER instances from a list of NER annotated sentences
-        :param sentences: NER sentences
-        :param train: train vocabularies during instance extraction (fixed if False)
-        :return: NER instances
-        """
-        if train:
-            self._init_vocabularies()
-        results = []
-        for sentence in sentences:
-            results.append(self.extract(sentence, sentence[LABEL_KEY]))
-        return results
+from srl.common.srl_utils import serialize
 
 
 def main(flags):
     reader = Conll2003Reader()
     feats = get_features_from_config(flags.config)
-    feature_extractor = NerFeatureExtractor(feats=feats)
+    feature_extractor = SequenceInstanceProcessor(feats=feats)
     train = True
     if flags.mode != 'new':
         feature_extractor.load(flags.vocab)
