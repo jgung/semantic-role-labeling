@@ -65,15 +65,15 @@ class TaggerTrainer(object):
             while current_epoch <= self.max_epochs:
                 logging.info('Epoch %d', current_epoch)
                 then = time.time()
-                # with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
-                #     for batch in self.training_iterator.epoch():
-                #         feed = {self.graph.feed_dict[k]: batch[k] for k in batch.keys() if k in self.graph.feed_dict}
-                #         feed[self.graph.feed_dict[KEEP_PROB_KEY]] = self.keep_prob
-                #         sess.run(self.graph.train_step, feed_dict=feed)
-                #         step += 1
-                #         bar.update(len(batch[LABEL_KEY]))
-                # sess.run(self.graph.global_step_increment)  # increment global step variable associated with graph
-                # logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
+                with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
+                    for batch in self.training_iterator.epoch():
+                        feed = {self.graph.feed_dict[k]: batch[k] for k in batch.keys() if k in self.graph.feed_dict}
+                        feed[self.graph.feed_dict[KEEP_PROB_KEY]] = self.keep_prob
+                        sess.run(self.graph.train_step, feed_dict=feed)
+                        step += 1
+                        bar.update(len(batch[LABEL_KEY]))
+                sess.run(self.graph.global_step_increment)  # increment global step variable associated with graph
+                logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
 
                 if current_epoch % self.eval_every == 0:
                     score = self._test(iterator=self.validation_iterator)

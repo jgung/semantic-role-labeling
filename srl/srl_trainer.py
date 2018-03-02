@@ -8,7 +8,7 @@ import time
 import tensorflow as tf
 from tqdm import tqdm
 
-from srl.common.constants import LABEL_KEY, LENGTH_KEY, MARKER_KEY, SENTENCE_INDEX, NON_PREDICATE, WORDS
+from srl.common.constants import LABEL_KEY, LENGTH_KEY, MARKER_KEY, SENTENCE_INDEX, WORDS
 from srl.common.srl_utils import configure_logger
 from srl.data.features import SequenceInstanceProcessor
 from srl.data.readers import chunk
@@ -61,8 +61,10 @@ class DeepSrlTrainer(TaggerTrainer):
                     output_file.write(line + '\n')
                     predicates = []
                     args = []
-            if len(predicates) == 0:
-                predicates = [word if marker == self.marker_index else NON_PREDICATE for (word, marker) in zip(words, markers)]
+            if not predicates:
+                predicates = ["-"] * markers.size
+            index = markers.tolist().index(self.marker_index)
+            predicates[index] = words[index]
             args.append(chunk([self.reverse_label_vocab[l] for l in labels], conll=True))
 
         if predicates:
