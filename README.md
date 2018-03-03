@@ -32,10 +32,21 @@ To train a model based on [Deep Semantic Role Labeling: What works and what's ne
 ```bash
 # download and prepare training data (only needs to be run once)
 ./data/scripts/conll05-data.sh -i /path/to/ptb/
-# extract features and train default model with CoNLL05 train/devel split
-./data/scripts/conll05-train.sh -i data/datasets/conll05/ -o data/experiments/conll05/
+# extract features and train default model with CoNLL-2005 train/devel split
+./data/scripts/train-srl.sh -i data/datasets/conll05/ -o data/experiments/conll05/
 ```
 To train a phrase-constrained model, you need to override the default configuration file and mode:
 ```bash
-./data/scripts/conll05-train.sh -i data/datasets/conll05/ -o data/experiments/conll05-phrase/ -c data/configs/phrase.json -m phrase
+./data/scripts/train-srl.sh -i data/datasets/conll05/ -o data/experiments/conll05-phrase/ -c data/configs/phrase.json -m phrase
+```
+### Training CoNLL-2012
+In order to generate SRL training data corresponding to the train-dev-test split from [CoNLL-2012](http://cemantix.org/data/ontonotes.html), you will need to download
+and extract OntoNotes 5 [LDC2013T19](https://catalog.ldc.upenn.edu/ldc2013t19).
+
+Having done this, you can train a model as follows:
+```bash
+# download and prepare data (only needs to be run once)
+./data/scripts/conll2012-data.sh -i /path/to/ontonotes-release-5.0/
+# extract features and train default model with CoNLL-2012 train/devel split
+./data/scripts/train-srl.sh -i data/datasets/conll2012/ -o data/experiments/conll2012/
 ```

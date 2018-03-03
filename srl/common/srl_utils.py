@@ -42,6 +42,12 @@ def serialize(serializable, out_path, out_name=None):
     if out_name:
         out_name = out_name if out_name.endswith(".pkl") else "{}.pkl".format(out_name)
     path = os.path.join(out_path, out_name) if out_name else out_path
+    parent_path = os.path.abspath(os.path.join(path, os.pardir))
+    try:
+        os.makedirs(parent_path)
+    except OSError:
+        if not os.path.isdir(parent_path):
+            raise
     with open(path, mode="wb") as out_file:
         pickle.dump(serializable, out_file)
 

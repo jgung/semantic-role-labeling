@@ -1,16 +1,17 @@
 #!/bin/bash
 
 PROGRAM_NAME=$0
-TRAIN_FILE="train-set"
-DEVEL_FILE="dev-set"
-MODE=word
-
+TRAIN_FILE="train-set.conll"
+DEVEL_FILE="dev-set.conll"
+MODE="word"
+CORPUS="conll05"
+EXT="conll"
 
 function usage()
 {
-    echo "Train SRL model with CoNLL-05 data."
+    echo "Train SRL model with CoNLL-formatted data. Can read from either CoNLL-2012 or CoNLL-2005 datasets."
     echo ""
-    echo "$PROGRAM_NAME -i path/to/conll05/data -o path/to/output/files"
+    echo "$PROGRAM_NAME -i path/to/srl/data -o path/to/output/files"
     echo -e "\t-h --help"
     echo -e "\t-i --input\tPath to directory containing train/dev files"
     echo -e "\t-o --output\tPath to directory for output files used during training, such as vocabularies and checkpoints"
@@ -18,6 +19,7 @@ function usage()
     echo -e "\t-m --mode\t(Optional) mode, '$MODE' by default, or 'phrase' for phrase-constrained model"
     echo -e "\t-t --train\t(Optional) training corpus file name, '$TRAIN_FILE' by default"
     echo -e "\t-v --valid\t(Optional) validation corpus file name, '$DEVEL_FILE' by default"
+    echo -e "\t--corpus\t(Optional) Corpus type in [conll2012, conll05], '$CORPUS' by default"
 }
 
 while [[ $# -gt 0 ]]
@@ -59,6 +61,11 @@ case ${key} in
     shift
     shift
     ;;
+    --corpus)
+    CORPUS=$2
+    shift
+    shift
+    ;;
     *)
     echo "Unknown option: $1"
     usage
@@ -74,30 +81,31 @@ fi
 
 if [ -z "$CONFIG" ]; then
     CONFIG="data/configs/he_acl_2017.json"
-    printf "Using default config at %s since none was provided.\n" ${CONFIG}
+    echo "Using default config at $CONFIG since none was provided."
 fi
 
 extract_features() {
-    if [ -f "$OUTPUT_PATH/$2.pkl" ]; then
-        printf "Skipping %s since it already exists.\n" "${OUTPUT_PATH%/}/$2.pkl"
+    OUTPUT_FILE="${OUTPUT_PATH%/}/${2%$EXT}pkl"
+    if [ -f ${OUTPUT_FILE} ]; then
+        echo "Skipping $OUTPUT_FILE since it already exists."
         return 0
     fi
 
-    INPUT_FILE="${DATA_PATH%/}/$2.conll"
-    OUTPUT_FILE="${OUTPUT_PATH%/}/$2.pkl"
-    printf "Extracting features from data at %s and saving to %s\n" "$INPUT_FILE" "$OUTPUT_FILE"
+    INPUT_FILE="${DATA_PATH%/}/$2"
+    echo "Extracting features from data at $INPUT_FILE and saving to $OUTPUT_FILE"
 
     FEAT_ARGS="./srl/data/srl_feature_extractor.py \
         --mode $1 \
         --input $INPUT_FILE \
         --output $OUTPUT_FILE \
-        --config ${CONFIG} \
-        --vocab ${VOCAB_PATH} \
-        --dataset conll05"
+        --config $CONFIG \
+        --vocab $VOCAB_PATH \
+        --dataset $CORPUS \
+        --ext $EXT"
     if [[ ${MODE} == word ]]; then
         python ${FEAT_ARGS}
     elif [[ ${MODE} == phrase ]]; then
-        python ${FEAT_ARGS} --phrase_input "data/datasets/phrases/conll05/$2.phrases" --phrase_ext phrases
+        python ${FEAT_ARGS} --phrase_input "data/datasets/phrases/conll05/${2%$EXT}phrases" --phrase_ext phrases
     else
         echo "Unrecognized mode: $MODE"
         return 1
@@ -113,17 +121,17 @@ extract_features() {
 train_model() {
     LOAD=""
     if [ -f "$OUTPUT_PATH/checkpoint" ]; then
-        printf "Continuing training from checkpoint file at %s\n" "${OUTPUT_PATH%/}/checkpoint"
+        echo "Continuing training from checkpoint file at ${OUTPUT_PATH%/}/checkpoint"
         LOAD="--load $OUTPUT_PATH"
     fi
     python ./srl/srl_trainer.py \
         --save "$OUTPUT_PATH/model-checkpoint" \
-        --train "$OUTPUT_PATH/$TRAIN_FILE.pkl" \
-        --valid "$OUTPUT_PATH/$DEVEL_FILE.pkl" \
-        --output "$OUTPUT_PATH/$DEVEL_FILE.predictions.txt" \
+        --train "$OUTPUT_PATH/${TRAIN_FILE%$EXT}pkl" \
+        --valid "$OUTPUT_PATH/${DEVEL_FILE%$EXT}pkl" \
+        --output "$OUTPUT_PATH/${DEVEL_FILE%$EXT}.predictions.txt" \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
-        --log "$OUTPUT_PATH/srl-$MODE.log" \
+        --log "$OUTPUT_PATH/trainer-$MODE.log" \
         --script ./data/scripts/srl-eval.pl \
         ${LOAD}
 }
