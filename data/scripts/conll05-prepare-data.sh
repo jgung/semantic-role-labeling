@@ -2,30 +2,57 @@
 
 PROGRAM_NAME=$0
 
+TRAIN_SECTIONS=(02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21)
 DEVEL_SECTIONS=(24)
 TEST_WSJ=(wsj)
 TEST_BROWN=(brown)
 
-function usage {
-    echo "usage: $PROGRAM_NAME [input_path] [output_path] [sections]"
-    echo "  input_path    path to output of download script"
-    echo "  output_path   name of output training file"
-    echo "  sections      optional path to newline-separated sections for training data"
-    exit 1
+function usage()
+{
+    echo "Prepare CoNLL-2005 data."
+    echo ""
+    echo "$PROGRAM_NAME -i path/to/conll05/download -o training-output-name"
+    echo -e "\t-h --help"
+    echo -e "\t-i --input\tPath to raw CoNLL 2005 data"
+    echo -e "\t-o --output\t(Optional) Training data output name (default='train-set')"
+    echo -e "\t-s --sections\t(Optional) path to training sections (newline-separated file)"
 }
 
-if [ "$#" -gt 0 ]; then
-    INPUT_PATH=$1
-    OUTPUT_PATH=$2
-    if [ "$#" -gt 2 ]; then
-        echo "Reading training sections at $3."
-        declare -a TRAIN_SECTIONS
-        TRAIN_SECTIONS=($(awk -F= '{print $1}' $3))
-    else
-        TRAIN_SECTIONS=(02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21)
-    fi
-else
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case ${key} in
+    -h|--help)
     usage
+    exit
+    ;;
+    -i|--input)
+    INPUT_PATH=$2
+    shift
+    shift
+    ;;
+    -o|--output)
+    OUTPUT_PATH=$2
+    shift
+    shift
+    ;;
+    -s|--sections)
+    TRAIN_SECTIONS=($(awk -F= '{print $1}' $2))
+    shift
+    shift
+    ;;
+    *)
+    echo "Unknown option: $1"
+    usage
+    exit 1
+    ;;
+esac
+done
+
+if [ -z "$INPUT_PATH" ] || [ -z "$OUTPUT_PATH" ]; then
+    usage
+    exit 1
 fi
 
 CONLL05_PATH="$INPUT_PATH/conll05st-release"

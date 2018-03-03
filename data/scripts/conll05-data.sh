@@ -19,7 +19,6 @@ function usage()
     echo -e "\t--sections\t(Optional) Sections file, $SECTIONS by default"
 }
 
-POSITIONAL=()
 while [[ $# -gt 0 ]]
 do
 key="$1"
@@ -30,7 +29,7 @@ case ${key} in
     exit
     ;;
     -i|--ptb)
-    PTB_DIR=$2
+    PTB_PATH=$2
     shift
     shift
     ;;
@@ -52,20 +51,10 @@ case ${key} in
 esac
 done
 
-if [ -z "$PTB_DIR" ]; then
+if [ -z "$PTB_PATH" ]; then
     usage
     exit 1
 fi
 
-if [ ! -d "$PTB_DIR" ]; then
-    echo "Error: The provided path '$PTB_DIR' does not exist."
-    exit 1
-    usage
-elif [ ! -d "$PTB_DIR/parsed" ]; then
-    echo "Error: Couldn't locate directory 'parsed' in '$PTB_DIR'. Make sure you have provided the correct directory."
-    usage
-    exit 1
-fi
-
-/bin/bash ${SCRIPTS_PATH}/conll05-download-data.sh ${PTB_DIR} ${OUTPUT_PATH}
-/bin/bash ${SCRIPTS_PATH}/conll05-prepare-data.sh ${OUTPUT_PATH} ${TRAIN} ${SECTIONS}
+/bin/bash ${SCRIPTS_PATH}/conll05-download-data.sh -i ${PTB_PATH} -o ${OUTPUT_PATH}
+/bin/bash ${SCRIPTS_PATH}/conll05-prepare-data.sh -i ${OUTPUT_PATH} -o ${TRAIN} -s ${SECTIONS}

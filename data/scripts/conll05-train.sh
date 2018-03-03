@@ -20,7 +20,6 @@ function usage()
     echo -e "\t-v --valid\t(Optional) validation corpus file name, '$DEVEL_FILE' by default"
 }
 
-POSITIONAL=()
 while [[ $# -gt 0 ]]
 do
 key="$1"
