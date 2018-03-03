@@ -4,7 +4,6 @@ from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn_cell import LSTMStateTuple
-from tensorflow.python.ops.rnn_cell_impl import _linear
 from tensorflow.python.util import nest
 
 
@@ -30,18 +29,16 @@ def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
 
 
 class HighwayLSTMCell(LSTMCell):
-    def __init__(self, num_units, highway=True, initializer=None, separate_init=True):
+    def __init__(self, num_units, highway=True, initializer=None):
         """
         Initialize an LSTM cell with highway connections as described in "Deep Semantic Role Labeling: What works and what's next"
         (He et al. 2017).
         :param highway: enable highway connections
         :param num_units: number of LSTM units in this cell
         :param initializer: weight initializer
-        :param separate_init: initialize each weight matrix individually
         """
         super(HighwayLSTMCell, self).__init__(num_units=num_units, initializer=initializer)
         self.highway = highway
-        self.separate_init = separate_init
 
     def call(self, inputs, state):
         (c_prev, m_prev) = state
@@ -53,17 +50,11 @@ class HighwayLSTMCell(LSTMCell):
             # i = input_gate, j = new_input, f = forget_gate, o = output_gate, r = transform_gate
             num_weights = self.highway and 5 or 4
             with vs.variable_scope('hidden_weights'):
-                if self.separate_init:
-                    hidden_matrix = linear_block_initialization(m_prev, num_weights * [self._num_units], bias=False)
-                else:
-                    hidden_matrix = _linear(m_prev, num_weights * self._num_units, bias=False)
+                hidden_matrix = linear_block_initialization(m_prev, num_weights * [self._num_units], bias=False)
 
             num_weights = self.highway and 6 or 4
             with vs.variable_scope('input_weights'):
-                if self.separate_init:
-                    input_matrix = linear_block_initialization(inputs, num_weights * [self._num_units], bias=True)
-                else:
-                    input_matrix = _linear(inputs, num_weights * self._num_units, bias=False)
+                input_matrix = linear_block_initialization(inputs, num_weights * [self._num_units], bias=True)
 
             if self.highway:
                 ih, jh, fh, oh, rh = array_ops.split(value=hidden_matrix, num_or_size_splits=5, axis=1)

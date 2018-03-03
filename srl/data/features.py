@@ -3,7 +3,7 @@ import math
 import numpy as np
 import tensorflow as tf
 
-from srl.common.constants import END_WORD, PAD_WORD, START_WORD, UNKNOWN_WORD
+from srl.common.constants import END_WORD, PAD_WORD, START_WORD, UNKNOWN_WORD, INSTANCE_INDEX, SENTENCE_INDEX
 from srl.common.constants import LABEL_KEY, LENGTH_KEY
 from srl.common.constants import UNKNOWN_INDEX
 from srl.common.srl_utils import deserialize, initialize_vectors, read_json, read_vectors, serialize
@@ -287,10 +287,29 @@ class SequenceInstanceProcessor(object):
                 instance[LENGTH_KEY] = isinstance(feat, list) and len(feat) or feat.size
         if labels:
             instance[LABEL_KEY] = self.extractors[LABEL_KEY].extract(sequence)
+            if SENTENCE_INDEX in sequence:
+                instance[SENTENCE_INDEX] = sequence[SENTENCE_INDEX]
+            if INSTANCE_INDEX in sequence:
+                instance[INSTANCE_INDEX] = sequence[INSTANCE_INDEX]
+
         return instance
 
     def read_instances(self, sentences, train=False):
-        pass
+        """
+        Read instances from a list of annotated sentences.
+        :param sentences: sentences
+        :param train: train vocabularies during instance extraction (fixed if False)
+        :return: instances
+        """
+        if train:
+            self._init_vocabularies()
+        results = []
+        for sentence in sentences:
+            result = self.extract(sentence, sentence[LABEL_KEY])
+            if INSTANCE_INDEX not in result:
+                result[INSTANCE_INDEX] = len(results)
+            results.append(result)
+        return results
 
     def train(self, train=True):
         """

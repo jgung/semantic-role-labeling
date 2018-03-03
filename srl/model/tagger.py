@@ -90,11 +90,8 @@ class DBLSTMTagger(object):
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):
-        if self.orthonormal_init:
-            cell = HighwayLSTMCell(self.state_dim, highway=self.highway, initializer=tf.orthogonal_initializer(),
-                                   separate_init=True)
-        else:
-            cell = HighwayLSTMCell(self.state_dim, highway=self.highway, separate_init=False)
+        initializer = tf.orthogonal_initializer() if self.orthonormal_init else None
+        cell = HighwayLSTMCell(self.state_dim, highway=self.highway, initializer=initializer)
         return DropoutWrapper(cell, variational_recurrent=self.recurrent_dropout, dtype=tf.float32,
                               output_keep_prob=self.dropout_keep_prob)
 
@@ -157,8 +154,9 @@ class DBLSTMTagger(object):
     def test(self):
         inputs = self.embedding_layer()
         self.inference_layer(inputs)
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(max_to_keep=2)
 
     def train(self):
         self.test()
         self.add_train_ops()
+        self.saver = tf.train.Saver(max_to_keep=2)

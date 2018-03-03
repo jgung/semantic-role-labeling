@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from itertools import izip
 
-from srl.common.constants import LABEL_KEY, MARKER_KEY
+from srl.common.constants import LABEL_KEY, MARKER_KEY, INSTANCE_INDEX, SENTENCE_INDEX
 
 START_OF_LABEL = "("
 END_OF_LABEL = ")"
@@ -62,6 +62,8 @@ class ConllSrlReader(ConllReader):
         self._pred_end = pred_end
         self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
         self.is_predicate = lambda x: x[self._pred_index] is not '-'
+        self.prop_count = 0
+        self.sentence_count = 0
 
     def read_instances(self, rows):
         instances = []
@@ -70,7 +72,11 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def read_predicates(self, rows):
@@ -174,7 +180,7 @@ class ConllPhraseReader(Conll2005Reader):
                 lines.append(line)
                 chunk_lines.append(chunk_line)
             if lines:
-                results.extend(self.read_instances([line.split() for line in lines]))
+                results.extend(self.read_instances([line.split() for line in lines], phrases=chunk_lines))
         return results
 
     def read_instances(self, rows, phrases=None):
@@ -183,7 +189,11 @@ class ConllPhraseReader(Conll2005Reader):
         instances = []
         for index, labels in self.read_predicates(rows).items():
             instance = self._read_chunks(rows, phrase_labels=phrases, predicate_index=index, labels=labels)
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def _read_chunks(self, rows, phrase_labels, predicate_index, labels):
@@ -191,32 +201,47 @@ class ConllPhraseReader(Conll2005Reader):
         predicate_chunk_index = -1  # index of phrase containing the predicate
         phrases = []  # list of phrases, each phrase represented by a list of fields from the input file
         curr_chunk = []  # the phrase currently being updated
-        assert len(rows) == len(phrase_labels) == len(
-            labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}'.format(len(rows), len(phrase_labels),
-                                                                                           len(labels))
+        prev_label = None
+        assert len(rows) == len(phrase_labels) == len(labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}'\
+            .format(len(rows), len(phrase_labels), len(labels))
+
         for token_index, (row, curr_label) in enumerate(zip(rows, phrase_labels)):
-            prev_label = curr_label
-            if _end_of_chunk(prev_label, curr_label) or (curr_chunk and (predicate_index == token_index
-                                                                         or predicate_index == token_index - 1)):
+            if _end_of_chunk(prev_label, curr_label):
                 phrases.append(curr_chunk)
                 curr_chunk = []
             elif curr_chunk:
                 curr_chunk.append(row)
 
-            if _start_of_chunk(prev_label, curr_label) or (predicate_index == token_index or predicate_index == token_index - 1):
+            if _start_of_chunk(prev_label, curr_label):
                 curr_chunk.append(row)
-                new_labels.append(labels[token_index])
             if predicate_index == token_index:
                 predicate_chunk_index = len(phrases)
+            prev_label = curr_label
         if curr_chunk:
             phrases.append(curr_chunk)
 
+        word_index = 0
+        new_index = -1
+        fixed_phrases = []
+        for index, phrase in enumerate(phrases):
+            if index == predicate_chunk_index:
+                for row in phrase:
+                    if word_index == predicate_index:
+                        new_index = len(fixed_phrases)
+                    fixed_phrases.append([row])
+                    new_labels.append(labels[word_index])
+                    word_index += 1
+            else:
+                fixed_phrases.append(phrase)
+                new_labels.append(labels[word_index])
+                word_index += len(phrase)
+
         instance = defaultdict(list)
-        for phrase in [self.read_fields(phrase) for phrase in phrases]:
+        for phrase in [self.read_fields(phrase) for phrase in fixed_phrases]:
             for key, val in phrase.items():
                 instance[key].append(val)
         instance[LABEL_KEY] = new_labels
-        instance[MARKER_KEY] = [index == predicate_chunk_index and '1' or '0' for index in range(0, len(new_labels))]
+        instance[MARKER_KEY] = [index == new_index and '1' or '0' for index in range(0, len(new_labels))]
         return instance
 
 

@@ -1,31 +1,17 @@
 import argparse
+from os import path
 
 from features import SequenceInstanceProcessor, get_features_from_config
-from srl.common.constants import LABEL_KEY
-from srl.common.srl_utils import serialize
 from readers import Conll2005Reader, Conll2012Reader, ConllPhraseReader
-
-
-class SrlFeatureExtractor(SequenceInstanceProcessor):
-    def __init__(self, feats):
-        super(SrlFeatureExtractor, self).__init__(feats)
-
-    def read_instances(self, sentences, train=False):
-        """
-        Read SRL instances from a list of SRL annotated sentences.
-        :param sentences: SRL sentences
-        :param train: train vocabularies during instance extraction (fixed if False)
-        :return: SRL instances
-        """
-        if train:
-            self._init_vocabularies()
-        results = []
-        for sentence in sentences:
-            results.append(self.extract(sentence, sentence[LABEL_KEY]))
-        return results
+from srl.common.srl_utils import serialize
 
 
 def main(flags):
+    flags.input = path.normpath(flags.input)
+    flags.vocab = path.normpath(flags.vocab)
+    flags.output = path.normpath(flags.output)
+    flags.config = path.normpath(flags.config)
+
     if flags.dataset == 'conll2012':
         raw_instances = Conll2012Reader().read_files(flags.input, flags.ext)
     elif flags.dataset == 'phrase' or flags.phrase_input:
@@ -35,7 +21,7 @@ def main(flags):
     else:
         raw_instances = Conll2005Reader().read_files(flags.input, flags.ext)
     feats = get_features_from_config(flags.config)
-    feature_extractor = SrlFeatureExtractor(feats=feats)
+    feature_extractor = SequenceInstanceProcessor(feats=feats)
 
     train = True
     if flags.mode != 'new':

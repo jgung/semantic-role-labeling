@@ -35,15 +35,18 @@ fi
 
 extract_features() {
     if [ -f "$OUTPUT_PATH/$2.pkl" ]; then
-        printf "Skipping %s since it already exists.\n" "$OUTPUT_PATH$2.pkl"
+        printf "Skipping %s since it already exists.\n" "${OUTPUT_PATH%/}/$2.pkl"
         return 0
     fi
-    printf "Extracting features from data at %s.conll and saving to %s\n" "$DATA_PATH$2" "$OUTPUT_PATH$2.pkl"
+
+    INPUT_FILE="${DATA_PATH%/}/$2.conll"
+    OUTPUT_FILE="${OUTPUT_PATH%/}/$2.pkl"
+    printf "Extracting features from data at %s and saving to %s\n" "$INPUT_FILE" "$OUTPUT_FILE"
 
     FEAT_ARGS="./srl/data/srl_feature_extractor.py \
         --mode $1 \
-        --input $DATA_PATH/$2.conll \
-        --output $OUTPUT_PATH/$2.pkl \
+        --input $INPUT_FILE \
+        --output $OUTPUT_FILE \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
         --dataset conll05"
@@ -64,14 +67,21 @@ extract_features() {
 }
 
 train_model() {
+    LOAD=""
+    if [ -f "$OUTPUT_PATH/checkpoint" ]; then
+        printf "Continuing training from checkpoint file at %s\n" "${OUTPUT_PATH%/}/checkpoint"
+        LOAD="--load $OUTPUT_PATH"
+    fi
     python ./srl/srl_trainer.py \
-        --save ${VOCAB_PATH} \
+        --save "$OUTPUT_PATH/model-checkpoint" \
         --train "$OUTPUT_PATH/$TRAIN_FILE.pkl" \
         --valid "$OUTPUT_PATH/$DEVEL_FILE.pkl" \
+        --output "$OUTPUT_PATH/$DEVEL_FILE.predictions.txt" \
         --config ${CONFIG} \
         --vocab ${VOCAB_PATH} \
-        --script ./data/scripts/srl-eval.pl \
         --log "$OUTPUT_PATH/srl-$MODE.log"
+        --script ./data/scripts/srl-eval.pl \
+        ${LOAD}
 }
 
 VOCAB_PATH="$OUTPUT_PATH/vocab"
