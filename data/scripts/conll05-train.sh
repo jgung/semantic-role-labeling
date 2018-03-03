@@ -31,7 +31,7 @@ fi
 
 extract_features() {
     if [ -f "$OUTPUT_PATH/$2.pkl" ]; then
-        printf "Skipping %s since it already exists.\n" "$OUTPUT_PATH$2.pkl"
+        printf "Skipping %s since it already exists.\n" "${OUTPUT_PATH%/}/$2.pkl"
         return 0
     fi
 

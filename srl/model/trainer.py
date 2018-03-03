@@ -53,9 +53,7 @@ class TaggerTrainer(object):
             self.graph = self._load_graph()
             self.graph.train()
             if self.load_path:
-                self.load_path = os.path.abspath(os.path.normpath(self.load_path))
-                logging.info('Loading most recent checkpoint from %s', self.load_path)
-                self.graph.saver.restore(sess, tf.train.latest_checkpoint(self.load_path))
+                self._restore(sess)
             else:
                 sess.run(tf.global_variables_initializer())
                 self.graph.initialize_embeddings(sess)
@@ -113,7 +111,12 @@ class TaggerTrainer(object):
     def _load_for_test(self, sess):
         self.graph = self._load_graph()
         self.graph.test()
-        self.graph.saver.restore(sess, self.load_path)
+        self._restore(sess)
+
+    def _restore(self, sess):
+        self.load_path = os.path.abspath(os.path.normpath(self.load_path))
+        logging.info('Loading most recent checkpoint from %s', self.load_path)
+        self.graph.saver.restore(sess, tf.train.latest_checkpoint(self.load_path))
 
     def _decode(self, predictions, stop, convert=False):
         raw = viterbi_decode(score=predictions[:stop], transition_params=self.graph.transition_matrix())[0]
