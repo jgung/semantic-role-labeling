@@ -1,30 +1,71 @@
 #!/bin/bash
 
 PROGRAM_NAME=$0
+OUTPUT_PATH="data/datasets/conll05"
+SCRIPTS_PATH="data/scripts"
+TRAIN="train-set"
+SECTIONS="${SCRIPTS_PATH}/splits/conll05-train-sections.txt"
 
-SRLPATH="./data/datasets/conll05"
-
-function usage {
-    echo "usage: $PROGRAM_NAME [ptb_path]"
-    echo "  ptb_path    path to root directory of Penn Treebank dataset"
-    exit 1
+function usage()
+{
+    echo "Download and prepare CoNLL-2005 training/test data. Requires PTB dataset from https://catalog.ldc.upenn.edu/ldc99t42."
+    echo ""
+    echo "$PROGRAM_NAME -i path/to/ptb"
+    echo -e "\t-h --help"
+    echo -e "\t-i --ptb\tPath to root directory of Penn TreeBank (LDC99T42)"
+    echo -e "\t-o --output\t(Optional) Output path, $OUTPUT_PATH by default"
+    echo -e "\t-s --scripts\t(Optional) Path to necessary scripts, $SCRIPTS_PATH by default"
+    echo -e "\t-t --train\t(Optional) Training file name, $TRAIN by default"
+    echo -e "\t--sections\t(Optional) Sections file, $SECTIONS by default"
 }
 
-if [ "$#" -gt 0 ]; then
-    if [ ! -d $1 ]; then
-        echo "$1 does not exist."
-        exit 1
-    elif [ ! -d $1/parsed ]; then
-        echo "Couldn't locate directory 'parsed' in $1. Make sure you have provided the correct directory."
-        exit 1
-    else
-        PTB_DIR=$1
-    fi
-else
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case ${key} in
+    -h|--help)
     usage
+    exit
+    ;;
+    -i|--ptb)
+    PTB_DIR=$2
+    shift
+    shift
+    ;;
+    -o|--output)
+    OUTPUT_PATH=$2
+    shift
+    shift
+    ;;
+    -s|--scripts)
+    SCRIPTS_PATH=$2
+    shift
+    shift
+    ;;
+    *)
+    echo "Unknown option: $1"
+    usage
+    exit 1
+    ;;
+esac
+done
+
+if [ -z "$PTB_DIR" ]; then
+    usage
+    exit 1
 fi
 
-SCRIPTS_DIR=./data/scripts
+if [ ! -d "$PTB_DIR" ]; then
+    echo "Error: The provided path '$PTB_DIR' does not exist."
+    exit 1
+    usage
+elif [ ! -d "$PTB_DIR/parsed" ]; then
+    echo "Error: Couldn't locate directory 'parsed' in '$PTB_DIR'. Make sure you have provided the correct directory."
+    usage
+    exit 1
+fi
 
-/bin/bash ${SCRIPTS_DIR}/conll05-download-data.sh ${PTB_DIR} ${SRLPATH}
-/bin/bash ${SCRIPTS_DIR}/conll05-prepare-data.sh ${SRLPATH} train-set ${SCRIPTS_DIR}/splits/conll05-train-sections.txt
+/bin/bash ${SCRIPTS_PATH}/conll05-download-data.sh ${PTB_DIR} ${OUTPUT_PATH}
+/bin/bash ${SCRIPTS_PATH}/conll05-prepare-data.sh ${OUTPUT_PATH} ${TRAIN} ${SECTIONS}

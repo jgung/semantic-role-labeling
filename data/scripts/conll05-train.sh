@@ -1,36 +1,81 @@
 #!/bin/bash
 
 PROGRAM_NAME=$0
-DATA_PATH=$1
-OUTPUT_PATH=$2
 TRAIN_FILE="train-set"
 DEVEL_FILE="dev-set"
 MODE=word
 
-function usage {
-    echo "usage: $PROGRAM_NAME [[[[input] output] config] mode]"
-    echo "  input   root directory for SRL train/dev/test files"
-    echo "  output  directory for output files used during training, such as the resulting models and checkpoints"
-    echo "  config  (optional) json file used to configure features and network parameters"
-    echo "  mode    (optional) mode, 'word' by default, or 'phrase' for phrase-constrained model"
-    exit 1
+
+function usage()
+{
+    echo "Train SRL model with CoNLL-05 data."
+    echo ""
+    echo "$PROGRAM_NAME -i path/to/conll05/data -o path/to/output/files"
+    echo -e "\t-h --help"
+    echo -e "\t-i --input\tPath to directory containing train/dev files"
+    echo -e "\t-o --output\tPath to directory for output files used during training, such as vocabularies and checkpoints"
+    echo -e "\t-c --config\t(Optional) .json file used to configure features and model hyper-parameters"
+    echo -e "\t-m --mode\t(Optional) mode, '$MODE' by default, or 'phrase' for phrase-constrained model"
+    echo -e "\t-t --train\t(Optional) training corpus file name, '$TRAIN_FILE' by default"
+    echo -e "\t-v --valid\t(Optional) validation corpus file name, '$DEVEL_FILE' by default"
 }
 
-if [ "$#" -gt 2 ]; then
-    CONFIG=$3
-elif [ "$#" -lt 2 ]; then
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case ${key} in
+    -h|--help)
     usage
-else
+    exit
+    ;;
+    -i|--input)
+    DATA_PATH=$2
+    shift
+    shift
+    ;;
+    -o|--output)
+    OUTPUT_PATH=$2
+    shift
+    shift
+    ;;
+    -c|--config)
+    CONFIG=$2
+    shift
+    shift
+    ;;
+    -m|--mode)
+    MODE=$2
+    shift
+    shift
+    ;;
+    -t|--train)
+    TRAIN_FILE=$2
+    shift
+    shift
+    ;;
+    -d|--valid|--dev)
+    DEVEL_FILE=$2
+    shift
+    shift
+    ;;
+    *)
+    echo "Unknown option: $1"
+    usage
+    exit 1
+    ;;
+esac
+done
+
+if [ -z "$DATA_PATH" ] || [ -z "$OUTPUT_PATH" ]; then
+    usage
+    exit
+fi
+
+if [ -z "$CONFIG" ]; then
     CONFIG="data/configs/he_acl_2017.json"
     printf "Using default config at %s since none was provided.\n" ${CONFIG}
-fi
-
-if [[ "$#" -gt 3 ]]; then
-    MODE=$4
-fi
-
-if [[ "$#" -gt 4 ]]; then
-    TRAIN_FILE=$5
 fi
 
 extract_features() {
