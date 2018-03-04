@@ -1,9 +1,11 @@
+import fnmatch
 import os
 import re
 from collections import defaultdict
 from itertools import izip
 
-from srl.common.constants import LABEL_KEY, MARKER_KEY
+from srl.common.constants import INSTANCE_INDEX, LABEL_KEY, MARKER_KEY, SENTENCE_INDEX
+from srl.common.srl_utils import read_json
 
 START_OF_LABEL = "("
 END_OF_LABEL = ")"
@@ -19,13 +21,14 @@ class ConllReader(object):
     def __init__(self, index_field_map):
         super(ConllReader, self).__init__()
         self._index_field_map = index_field_map
+        self.skip_line = lambda line: False
 
     def read_files(self, path, extension):
         if os.path.isdir(path):
             results = []
-            for input_file in sorted(os.listdir(path)):
-                if input_file.endswith(extension):
-                    results.extend(self.read_file(os.path.join(path, input_file)))
+            for root, dir_names, file_names in os.walk(path):
+                for file_name in fnmatch.filter(file_names, '*' + extension):
+                    results.extend(self.read_file(os.path.join(root, file_name)))
             return results
         return self.read_file(path)
 
@@ -35,9 +38,10 @@ class ConllReader(object):
             lines = []
             for line in conll_file:
                 line = line.strip()
-                if not line and lines:
-                    results.extend(self.read_instances([line.split() for line in lines]))
-                    lines = []
+                if not line or self.skip_line(line):
+                    if lines:
+                        results.extend(self.read_instances([line.split() for line in lines]))
+                        lines = []
                     continue
                 lines.append(line)
             if lines:
@@ -62,6 +66,8 @@ class ConllSrlReader(ConllReader):
         self._pred_end = pred_end
         self._pred_index = [key for key, val in self._index_field_map.items() if val == pred_key][0]
         self.is_predicate = lambda x: x[self._pred_index] is not '-'
+        self.prop_count = 0
+        self.sentence_count = 0
 
     def read_instances(self, rows):
         instances = []
@@ -70,7 +76,11 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def read_predicates(self, rows):
@@ -86,7 +96,8 @@ class ConllSrlReader(ConllReader):
             pred_cols[key] = ConllSrlReader._convert_to_iob(val)
 
         assert len(pred_indices) == len(pred_cols), (
-            'Unexpected number of predicate columns: %d, check that predicate start and end indices are correct' % len(pred_cols))
+                'Unexpected number of predicate columns: %d instead of %d'
+                ', check that predicate start and end indices are correct: %s' % (len(pred_cols), len(pred_indices), rows))
         # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
         predicates = {i: pred_cols[index] for index, i in enumerate(pred_indices)}
         return predicates
@@ -125,6 +136,30 @@ class Conll2003Reader(ConllReader):
         return instances
 
 
+class Conll2012NerReader(ConllReader):
+    def __init__(self, besio=False):
+        super(Conll2012NerReader, self).__init__({3: "word", 4: "pos", 5: "parse", 10: "ne"})
+        self.besio = besio
+
+    def read_instances(self, rows):
+        instances = super(Conll2012NerReader, self).read_instances(rows)
+        for instance in instances:
+            instance[LABEL_KEY] = chunk(instance['ne'], besio=self.besio)
+        return instances
+
+
+class CustomSrlReader(ConllSrlReader):
+    def __init__(self, index_field_map, pred_start):
+        super(CustomSrlReader, self).__init__(index_field_map=index_field_map, pred_start=pred_start)
+
+    @staticmethod
+    def parse_json(json_file):
+        fields = read_json(json_file)
+        index_field_map = {val: key for (key, val) in fields['columns'].items()}
+        pred_start = fields['arg_start_col']
+        return {"index_field_map": index_field_map, "pred_start": pred_start}
+
+
 class Conll2005Reader(ConllSrlReader):
     def __init__(self):
         super(Conll2005Reader, self).__init__({0: "word", 1: "pos", 2: "parse", 3: "ne", 4: "roleset", 5: "predicate"},
@@ -136,6 +171,7 @@ class Conll2012Reader(ConllSrlReader):
         super(Conll2012Reader, self).__init__({3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"},
                                               pred_start=11, pred_end=1)
         self.is_predicate = lambda x: x[self._pred_index] is not '-' and x[7] is not '-'
+        self.skip_line = lambda line: line.startswith("#")  # skip comments
 
 
 class ConllPhraseReader(Conll2005Reader):
@@ -183,7 +219,11 @@ class ConllPhraseReader(Conll2005Reader):
         instances = []
         for index, labels in self.read_predicates(rows).items():
             instance = self._read_chunks(rows, phrase_labels=phrases, predicate_index=index, labels=labels)
+            instance[INSTANCE_INDEX] = self.prop_count
+            instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
+            self.prop_count += 1
+        self.sentence_count += 1
         return instances
 
     def _read_chunks(self, rows, phrase_labels, predicate_index, labels):
@@ -192,7 +232,7 @@ class ConllPhraseReader(Conll2005Reader):
         phrases = []  # list of phrases, each phrase represented by a list of fields from the input file
         curr_chunk = []  # the phrase currently being updated
         prev_label = None
-        assert len(rows) == len(phrase_labels) == len(labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}'\
+        assert len(rows) == len(phrase_labels) == len(labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}' \
             .format(len(rows), len(phrase_labels), len(labels))
 
         for token_index, (row, curr_label) in enumerate(zip(rows, phrase_labels)):

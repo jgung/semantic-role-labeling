@@ -7,12 +7,11 @@ import tempfile
 import time
 
 import tensorflow as tf
-from tensorflow.contrib.crf import viterbi_decode
 from tqdm import tqdm
 
 from srl.common.constants import LABEL_KEY, LENGTH_KEY
 from srl.common.srl_utils import configure_logger
-from srl.data.ner_feature_extractor import NerFeatureExtractor
+from srl.data.features import SequenceInstanceProcessor
 from srl.model.tagger import DBLSTMTagger
 from srl.model.trainer import TaggerTrainer
 
@@ -24,12 +23,6 @@ class NerTagger(DBLSTMTagger):
         super(NerTagger, self).__init__(features, num_layers, state_dim, num_classes, transition_params, crf, dblstm)
 
     def training_op(self):
-        # Use optimization algorithm described in Ma and Hovy 2016
-        # learning_rate = tf.train.inverse_time_decay(learning_rate=0.015,
-        #                                             global_step=self.global_step,
-        #                                             decay_steps=1,
-        #                                             decay_rate=0.05)
-        # optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         tvars = tf.trainable_variables()
         gradients = tf.gradients(self.loss, tvars)
@@ -45,26 +38,21 @@ class DeepNerTrainer(TaggerTrainer):
                          state_dim=self.lstm_hidden_dim, transition_params=self.transition_params,
                          crf=self.crf, dblstm=self.dblstm)
 
-    def _test(self, graph, sess, iterator):
+    def _test(self, iterator):
         then = time.time()
         pred_ys, gold_ys = [], []
         with tqdm(total=iterator.size, leave=False, unit=' instances') as bar:
             for batch in iterator.epoch():
-                feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                for key in graph.dropout_keys:
-                    feed[graph.feed_dict[key]] = 1.0
-                logits = sess.run(graph.scores, feed_dict=feed)
                 lengths = [l - 1 for l in batch[LENGTH_KEY]] if self.crf else batch[LENGTH_KEY]  # remove padding before eval
                 gold_ys.extend([gold[:stop] for (gold, stop) in zip(batch[LABEL_KEY], lengths)])
-                transition = graph.transition_matrix()
-                pred_ys.extend([viterbi_decode(score=pred[:stop], transition_params=transition)[0] for
-                                (pred, stop) in zip(logits, lengths)])
+                pred_ys.extend([self._decode(pred, stop) for (pred, stop) in zip(self._logits(batch), lengths)])
                 bar.update(len(batch[LABEL_KEY]))
         logging.info('Evaluation completed in %d seconds.', time.time() - then)
         return self.evaluate(gold_ys, pred_ys)
 
     def evaluate(self, gold_seqs, pred_seqs):
-        with tempfile.NamedTemporaryFile(mode='w') as temp:
+        output_file = open(self.output_file, 'w+b') if self.output_file else tempfile.NamedTemporaryFile()
+        with output_file as temp:
             for gold_labels, pred_labels in zip(gold_seqs, pred_seqs):
                 for x, y in zip(gold_labels, pred_labels):
                     temp.write("x {} {}\n".format(self.reverse_label_vocab[x], self.reverse_label_vocab[y]))
@@ -75,10 +63,17 @@ class DeepNerTrainer(TaggerTrainer):
             logging.info(result)
             return float(re.split('\s+', re.split('\n', result)[1].strip())[7])
 
+    def _predict(self, iterator):
+        predictions = []
+        for batch in iterator.epoch():
+            lengths = [l - 1 for l in batch[LENGTH_KEY]] if self.crf else batch[LENGTH_KEY]  # remove padding before eval
+            predictions.extend([self._decode(pred, stop, convert=True) for (pred, stop) in zip(self._logits(batch), lengths)])
+        return predictions
+
 
 def main(_):
     configure_logger(FLAGS.log)
-    ner = DeepNerTrainer(FLAGS, NerFeatureExtractor)
+    ner = DeepNerTrainer(FLAGS, SequenceInstanceProcessor)
     if FLAGS.train:
         if not FLAGS.valid:
             raise ValueError('Missing required validation (dev) set. Use "--valid path/to/valid.pkl" to specify validation data.')
@@ -94,6 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--train', type=str, help='Binary (*.pkl) train file path.')
     parser.add_argument('--valid', type=str, help='Binary (*.pkl) validation file path.')
     parser.add_argument('--test', required=False, type=str, help='Binary (*.pkl) test file path.')
+    parser.add_argument('--output', required=False, type=str, help='Output file to store test predictions')
     parser.add_argument('--vocab', required=True, type=str, help='Path to directory containing vocabulary files.')
     parser.add_argument('--script', required=True, type=str, help='Path to evaluation script.')
     parser.add_argument('--log', default='ner_trainer.log', type=str, help='Path to output log.')

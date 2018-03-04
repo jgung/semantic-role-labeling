@@ -2,28 +2,8 @@ import argparse
 from os import path
 
 from features import SequenceInstanceProcessor, get_features_from_config
-from srl.common.constants import LABEL_KEY
+from readers import Conll2005Reader, Conll2012Reader, CustomSrlReader, ConllPhraseReader
 from srl.common.srl_utils import serialize
-from readers import Conll2005Reader, Conll2012Reader, ConllPhraseReader
-
-
-class SrlFeatureExtractor(SequenceInstanceProcessor):
-    def __init__(self, feats):
-        super(SrlFeatureExtractor, self).__init__(feats)
-
-    def read_instances(self, sentences, train=False):
-        """
-        Read SRL instances from a list of SRL annotated sentences.
-        :param sentences: SRL sentences
-        :param train: train vocabularies during instance extraction (fixed if False)
-        :return: SRL instances
-        """
-        if train:
-            self._init_vocabularies()
-        results = []
-        for sentence in sentences:
-            results.append(self.extract(sentence, sentence[LABEL_KEY]))
-        return results
 
 
 def main(flags):
@@ -38,10 +18,14 @@ def main(flags):
         raw_instances = ConllPhraseReader().read_files(flags.input, flags.ext,
                                                        phrase_path=flags.phrase_input if flags.phrase_input else flags.input,
                                                        phrase_ext=flags.phrase_ext)
+    elif flags.dataset == 'custom' or flags.custom:
+        args = CustomSrlReader.parse_json(flags.custom)
+        print('Using custom reader with fields: {}'.format(args))
+        raw_instances = CustomSrlReader(**args).read_files(flags.input, flags.ext)
     else:
         raw_instances = Conll2005Reader().read_files(flags.input, flags.ext)
     feats = get_features_from_config(flags.config)
-    feature_extractor = SrlFeatureExtractor(feats=feats)
+    feature_extractor = SequenceInstanceProcessor(feats=feats)
 
     train = True
     if flags.mode != 'new':
@@ -68,8 +52,9 @@ if __name__ == '__main__':
     parser.add_argument('--phrase_ext', default='chunks', type=str, help='Phrase file extension.')
     parser.add_argument('--output', required=True, type=str, help='Path to save pickled input.')
     parser.add_argument('--config', required=True, type=str, help='Path to configuration json.')
+    parser.add_argument('--custom', required=False, type=str, help='Path to custom reader json.')
     parser.add_argument('--ext', default='conll', type=str, help='Input file extension.')
     parser.add_argument('--vocab', required=True, type=str, help='Vocab directory path.')
-    parser.add_argument('--dataset', default='conll05', choices=['conll05', 'conll2012', 'phrase'], type=str,
-                        help='Dataset (conll05, conll2012, or phrase).')
+    parser.add_argument('--dataset', default='conll05', choices=['conll05', 'conll2012', 'custom', 'phrase'], type=str,
+                        help='Dataset (conll05, conll2012, custom, or phrase).')
     main(parser.parse_args())

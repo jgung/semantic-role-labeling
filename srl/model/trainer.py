@@ -1,13 +1,15 @@
 import logging
+import os
 import random
 import time
-import os
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.crf import viterbi_decode
 from tqdm import tqdm
 
-from srl.common.constants import END_INDEX, KEEP_PROB_KEY, LABEL_KEY, LENGTH_KEY, PAD_INDEX, START_INDEX
+from srl.common.constants import END_INDEX, KEEP_PROB_KEY, LABEL_KEY, LENGTH_KEY, PAD_INDEX, START_INDEX, INSTANCE_INDEX, \
+    SENTENCE_INDEX
 from srl.common.srl_utils import deserialize, read_json
 from srl.data.features import get_features_from_config
 from tagger import DBLSTMTagger
@@ -19,6 +21,7 @@ class TaggerTrainer(object):
         self.save_path = flags.save
         self.load_path = flags.load
         self.script_path = flags.script
+        self.output_file = flags.output
 
         self._read_conf(flags.config)
         self.features = get_features_from_config(flags.config)
@@ -35,45 +38,49 @@ class TaggerTrainer(object):
             self.training_iterator = BatchIterator(deserialize(flags.train), self.batch_size, self.features,
                                                    num_buckets=self.num_buckets, max_length=self.max_length, end_pad=self.crf)
         if flags.valid:
-            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, self.features, end_pad=self.crf)
+            self.validation_iterator = BatchIterator(deserialize(flags.valid), self.batch_size, self.features, end_pad=self.crf,
+                                                     preserve_order=True)
         if flags.test:
-            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, self.features, end_pad=self.crf)
+            self.test_iterator = BatchIterator(deserialize(flags.test), self.batch_size, self.features, end_pad=self.crf,
+                                               preserve_order=True)
+
+        self.sess = None
+        self.graph = None
 
     def train(self):
-        with tf.Session() as sess:
-            graph = self._load_graph()
-            graph.train()
+        self.sess = tf.Session()
+        with self.sess as sess:
+            self.graph = self._load_graph()
+            self.graph.train()
             if self.load_path:
-                self.load_path = os.path.abspath(os.path.normpath(self.load_path))
-                logging.info('Loading most recent checkpoint from %s', self.load_path)
-                graph.saver.restore(sess, tf.train.latest_checkpoint(self.load_path))
+                self._restore(sess)
             else:
                 sess.run(tf.global_variables_initializer())
-                graph.initialize_embeddings(sess)
+                self.graph.initialize_embeddings(sess)
 
-            current_epoch, step, max_score = graph.global_step.eval() + 1, 0, float('-inf')
+            current_epoch, step, max_score = self.graph.global_step.eval() + 1, 0, float('-inf')
             patience = 0
             while current_epoch <= self.max_epochs:
                 logging.info('Epoch %d', current_epoch)
                 then = time.time()
                 with tqdm(total=self.training_iterator.size, leave=False, unit=' instances') as bar:
                     for batch in self.training_iterator.epoch():
-                        feed = {graph.feed_dict[k]: batch[k] for k in batch.keys()}
-                        feed[graph.feed_dict[KEEP_PROB_KEY]] = self.keep_prob
-                        sess.run(graph.train_step, feed_dict=feed)
+                        feed = {self.graph.feed_dict[k]: batch[k] for k in batch.keys() if k in self.graph.feed_dict}
+                        feed[self.graph.feed_dict[KEEP_PROB_KEY]] = self.keep_prob
+                        sess.run(self.graph.train_step, feed_dict=feed)
                         step += 1
                         bar.update(len(batch[LABEL_KEY]))
-                sess.run(graph.global_step_increment)  # increment global step variable associated with graph
+                sess.run(self.graph.global_step_increment)  # increment global step variable associated with graph
                 logging.info('Training for epoch %d completed in %f seconds.', current_epoch, time.time() - then)
 
                 if current_epoch % self.eval_every == 0:
-                    score = self._test(graph=graph, sess=sess, iterator=self.validation_iterator)
+                    score = self._test(iterator=self.validation_iterator)
                     if score > max_score:
                         max_score = score
                         patience = 0
                         if self.save_path:
                             logging.info("Saving model to %s" % os.path.normpath(self.save_path))
-                            graph.saver.save(sess, self.save_path, global_step=graph.global_step)
+                            self.graph.saver.save(sess, self.save_path, global_step=self.graph.global_step)
                     else:
                         patience += 1
 
@@ -82,14 +89,46 @@ class TaggerTrainer(object):
                 current_epoch += 1
 
     def test(self):
-        with tf.Session() as sess:
-            graph = self._load_graph()
-            graph.test()
-            graph.saver.restore(sess, self.load_path)
-            self._test(graph, sess, self.test_iterator)
+        self.sess = tf.Session()
+        with self.sess as sess:
+            self._load_for_test(sess)
+            self._test(self.test_iterator)
 
-    def _test(self, graph, sess, iterator):
+    def _test(self, iterator):
         raise NotImplementedError
+
+    def predict(self, targets):
+        if not self.sess:
+            self.sess = tf.Session()
+            self._load_for_test(self.sess)
+        instances = self.extractor.read_instances(targets)
+        iterator = BatchIterator(instances, 1, self.features, end_pad=self.crf, preserve_order=True)
+        return self._predict(iterator)
+
+    def _predict(self, iterator):
+        raise NotImplementedError
+
+    def _load_for_test(self, sess):
+        self.graph = self._load_graph()
+        self.graph.test()
+        self._restore(sess)
+
+    def _restore(self, sess):
+        self.load_path = os.path.abspath(os.path.normpath(self.load_path))
+        logging.info('Loading most recent checkpoint from %s', self.load_path)
+        self.graph.saver.restore(sess, tf.train.latest_checkpoint(self.load_path))
+
+    def _decode(self, predictions, stop, convert=False):
+        raw = viterbi_decode(score=predictions[:stop], transition_params=self.graph.transition_matrix())[0]
+        if convert:
+            raw = [self.reverse_label_vocab[label] for label in raw]
+        return raw
+
+    def _logits(self, batch):
+        feed = {self.graph.feed_dict[k]: batch[k] for k in batch.keys() if k in self.graph.feed_dict}
+        for key in self.graph.dropout_keys:
+            feed[self.graph.feed_dict[key]] = 1.0
+        return self.sess.run(self.graph.scores, feed_dict=feed)
 
     def _read_conf(self, conf_json):
         conf = read_json(conf_json)
@@ -128,22 +167,26 @@ class TaggerTrainer(object):
 
 
 class BatchIterator(object):
-    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False):
+    def __init__(self, data, batch_size, features, num_buckets=5, max_length=99999, end_pad=False, preserve_order=False):
         super(BatchIterator, self).__init__()
         self.num_buckets = num_buckets
         self.batch_size = batch_size
         self.size = len(data)
         self.features = features
         self.end_pad = 1 if end_pad else 0
+        self.preserve_order = preserve_order
 
         data = [x for x in data if x[LENGTH_KEY] <= max_length]
-        data.sort(key=lambda inst: inst[LENGTH_KEY])
-        self.bucket_size = self.size // num_buckets
+        if not self.preserve_order:
+            data.sort(key=lambda inst: inst[LENGTH_KEY])
+        else:
+            self.num_buckets = 1
+        self.bucket_size = self.size // self.num_buckets
         self.data = []
-        for bucket in range(num_buckets):
+        for bucket in range(self.num_buckets):
             self.data.append(data[bucket * self.bucket_size: (bucket + 1) * self.bucket_size])
-        self.data[-1].extend(data[self.bucket_size * num_buckets:])  # add remaining instances
-        self.pointer = np.array([0] * num_buckets)
+        self.data[-1].extend(data[self.bucket_size * self.num_buckets:])  # add remaining instances
+        self.pointer = np.array([0] * self.num_buckets)
 
     def max_steps(self):
         return len(self.data) // self.batch_size
@@ -166,14 +209,17 @@ class BatchIterator(object):
 
     def _reset(self):
         for i in range(self.num_buckets):
-            random.shuffle(self.data[i])
+            if not self.preserve_order:
+                random.shuffle(self.data[i])
             self.pointer[i] = 0
 
     def _prepare_batch(self, batch):
         lengths = [instance[LENGTH_KEY] + self.end_pad for instance in batch]
+        indices = [instance.get(INSTANCE_INDEX, 0) + self.end_pad for instance in batch]
+        sentence_indices = [instance.get(SENTENCE_INDEX, 0) + self.end_pad for instance in batch]
         max_length = max(lengths)  # minimum length 2 due to https://github.com/tensorflow/tensorflow/issues/7751
         labels = self._pad_2d(LABEL_KEY, batch, max_length)
-        feed_dict = {LABEL_KEY: labels, LENGTH_KEY: lengths}
+        feed_dict = {SENTENCE_INDEX: sentence_indices, INSTANCE_INDEX: indices, LABEL_KEY: labels, LENGTH_KEY: lengths}
         for feature in self.features:
             if feature.rank == 2:
                 feed_dict[feature.name] = self._pad_2d(feature.name, batch, max_length)
