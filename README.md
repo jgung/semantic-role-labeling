@@ -73,3 +73,10 @@ you can train as follows with a custom reader named `reader.json`:
 ```bash
 ./data/scripts/train-srl.sh -i path/to/data/directory -o path/to/output/directory -t train.conll -v valid.conll --custom reader.json
 ```
+
+### Evaluation
+To simplify evaluation, `train-srl.sh` can be used directly. For CoNLL-05, for example, you can test on the Brown corpus as follows:
+```bash
+./data/scripts/train-srl.sh -i data/datasets/conll05/ -o data/experiments/conll05/ --test test-brown.conll
+```
+where `test-brown.conll` must be located in `data/datasets/conll05/`.

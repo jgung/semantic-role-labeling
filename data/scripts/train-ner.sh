@@ -11,6 +11,7 @@ function usage()
     echo -e "\t-h --help"
     echo -e "\t-t --train\tTraining corpus file name"
     echo -e "\t-v --valid\tValidation corpus file name"
+    echo -e "\t--test\t(Optional) test corpus file name"
     echo -e "\t-o --output\tPath to directory for output files used during training, such as vocabularies and checkpoints"
     echo -e "\t-c --config\t(Optional) .json file used to configure features and model hyper-parameters"
     echo -e "\t--corpus\t(Optional) Corpus type in [conll03, conll2012], '$CORPUS' by default"
@@ -45,6 +46,11 @@ case ${key} in
     shift
     shift
     ;;
+    --test)
+    TEST_FILE=$2
+    shift
+    shift
+    ;;
     --corpus)
     CORPUS=$2
     shift
@@ -58,9 +64,16 @@ case ${key} in
 esac
 done
 
-if [ -z "$TRAIN_FILE" ] || [ -z "$DEVEL_FILE" ] || [ -z "$OUTPUT_PATH" ]; then
+if [ -z "$TEST_FILE" ]; then
+    if [ -z "$TRAIN_FILE" ] || [ -z "$DEVEL_FILE" ]; then
+        usage
+        exit 1
+    fi
+fi
+
+if [ -z "$OUTPUT_PATH" ]; then
     usage
-    exit
+    exit 1
 fi
 
 if [ -z "$CONFIG" ]; then
@@ -115,6 +128,22 @@ train_model() {
         ${LOAD}
 }
 
+test_model() {
+    if [ ! -f "$OUTPUT_PATH/checkpoint" ]; then
+        echo "Couldn't locate checkpoint file at $OUTPUT_PATH/checkpoint".
+        return 1
+    fi
+    TEST_FILE_NAME=$(basename "$TEST_FILE")
+    python ./srl/ner_trainer.py \
+        --test "$OUTPUT_PATH/${TEST_FILE_NAME}.pkl" \
+        --output "$OUTPUT_PATH/${TEST_FILE_NAME}.predictions.txt" \
+        --config ${CONFIG} \
+        --vocab ${VOCAB_PATH} \
+        --log "$OUTPUT_PATH/ner-tester.log" \
+        --script ./data/scripts/conlleval.pl \
+        --load ${OUTPUT_PATH}
+}
+
 VOCAB_PATH="$OUTPUT_PATH/vocab"
 
 if [ ! -d ${VOCAB_PATH} ]; then
@@ -123,4 +152,10 @@ fi
 
 export PYTHONPATH=${PYTHONPATH}:`pwd`
 
-extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
+if [ -n "$TRAIN_FILE" ]; then
+    extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
+fi
+
+if [ -n "$TEST_FILE" ]; then
+    extract_features load ${TEST_FILE} && test_model
+fi
