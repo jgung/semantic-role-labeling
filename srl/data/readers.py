@@ -5,6 +5,7 @@ from collections import defaultdict
 from itertools import izip
 
 from srl.common.constants import INSTANCE_INDEX, LABEL_KEY, MARKER_KEY, SENTENCE_INDEX
+from srl.common.srl_utils import read_json
 
 START_OF_LABEL = "("
 END_OF_LABEL = ")"
@@ -95,8 +96,8 @@ class ConllSrlReader(ConllReader):
             pred_cols[key] = ConllSrlReader._convert_to_iob(val)
 
         assert len(pred_indices) == len(pred_cols), (
-            'Unexpected number of predicate columns: %d instead of %d'
-            ', check that predicate start and end indices are correct: %s' % (len(pred_cols), len(pred_indices), rows))
+                'Unexpected number of predicate columns: %d instead of %d'
+                ', check that predicate start and end indices are correct: %s' % (len(pred_cols), len(pred_indices), rows))
         # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
         predicates = {i: pred_cols[index] for index, i in enumerate(pred_indices)}
         return predicates
@@ -145,6 +146,18 @@ class Conll2012NerReader(ConllReader):
         for instance in instances:
             instance[LABEL_KEY] = chunk(instance['ne'], besio=self.besio)
         return instances
+
+
+class CustomSrlReader(ConllSrlReader):
+    def __init__(self, index_field_map, pred_start):
+        super(CustomSrlReader, self).__init__(index_field_map=index_field_map, pred_start=pred_start)
+
+    @staticmethod
+    def parse_json(json_file):
+        fields = read_json(json_file)
+        index_field_map = {val: key for (key, val) in fields['columns'].items()}
+        pred_start = fields['arg_start_col']
+        return {"index_field_map": index_field_map, "pred_start": pred_start}
 
 
 class Conll2005Reader(ConllSrlReader):
@@ -219,7 +232,7 @@ class ConllPhraseReader(Conll2005Reader):
         phrases = []  # list of phrases, each phrase represented by a list of fields from the input file
         curr_chunk = []  # the phrase currently being updated
         prev_label = None
-        assert len(rows) == len(phrase_labels) == len(labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}'\
+        assert len(rows) == len(phrase_labels) == len(labels), 'Unequal number of rows phrases, and labels: {} vs. {} vs. {}' \
             .format(len(rows), len(phrase_labels), len(labels))
 
         for token_index, (row, curr_label) in enumerate(zip(rows, phrase_labels)):

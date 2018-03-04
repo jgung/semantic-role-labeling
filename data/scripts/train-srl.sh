@@ -20,6 +20,7 @@ function usage()
     echo -e "\t-t --train\t(Optional) training corpus file name, '$TRAIN_FILE' by default"
     echo -e "\t-v --valid\t(Optional) validation corpus file name, '$DEVEL_FILE' by default"
     echo -e "\t--corpus\t(Optional) Corpus type in [conll2012, conll05], '$CORPUS' by default"
+    echo -e "\t--custom\t(Optional) .json configuration for a custom corpus reader"
 }
 
 while [[ $# -gt 0 ]]
@@ -56,13 +57,18 @@ case ${key} in
     shift
     shift
     ;;
-    -d|--valid|--dev)
+    -d|-v|--valid|--dev)
     DEVEL_FILE=$2
     shift
     shift
     ;;
     --corpus)
     CORPUS=$2
+    shift
+    shift
+    ;;
+    --custom)
+    CUSTOM_READER=$2
     shift
     shift
     ;;
@@ -102,6 +108,11 @@ extract_features() {
         --vocab $VOCAB_PATH \
         --dataset $CORPUS \
         --ext $EXT"
+
+    if [ -n ${CUSTOM_READER} ]; then
+        FEAT_ARGS="$FEAT_ARGS --custom $CUSTOM_READER"
+    fi
+
     if [[ ${MODE} == word ]]; then
         python ${FEAT_ARGS}
     elif [[ ${MODE} == phrase ]]; then

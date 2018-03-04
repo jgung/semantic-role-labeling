@@ -50,3 +50,26 @@ Having done this, you can train a model as follows:
 # extract features and train default model with CoNLL-2012 train/devel split
 ./data/scripts/train-srl.sh -i data/datasets/conll2012/ -o data/experiments/conll2012/
 ```
+### Training with other data
+It's possible to train using CoNLL-style data in other formats (with different columns). To do this, you must specify a few
+required fields through a .json configuration file:
+```json
+{
+  "columns": {
+    "word": 0, 
+    "roleset": 4,
+    "predicate": 5
+  },
+  "arg_start_col": 6
+}
+```
+Here, `"word": 0` means that words appear in the first column. Similarly, `"roleset": 4` means that the roleset or sense
+for predicates appears in the 4th column. `"predicate"` provides the column index of the lemma of the predicate.
+Other columns can be added for use in feature extraction, but these are the bare minimum required.
+`"arg_start_col"` gives the first column containing argument labels. No additional columns can occur after argument columns.
+
+Then, if you have a training file named `train.conll` and dev file named `valid.conll` in `path/to/data/directory`,
+you can train as follows with a custom reader named `reader.json`:
+```bash
+./data/scripts/train-srl.sh -i path/to/data/directory -o path/to/output/directory -t train.conll -v valid.conll --custom reader.json
+```
