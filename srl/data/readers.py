@@ -95,7 +95,7 @@ class ConllSrlReader(ConllReader):
         for key, val in pred_cols.items():
             pred_cols[key] = ConllSrlReader._convert_to_iob(val)
 
-        assert len(pred_indices) == len(pred_cols), (
+        assert len(pred_indices) <= len(pred_cols), (
                 'Unexpected number of predicate columns: %d instead of %d'
                 ', check that predicate start and end indices are correct: %s' % (len(pred_cols), len(pred_indices), rows))
         # create predicate dictionary with keys as predicate word indices and values as corr. lists of labels (1 for each token)
