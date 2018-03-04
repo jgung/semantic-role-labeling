@@ -135,6 +135,18 @@ class Conll2003Reader(ConllReader):
         return instances
 
 
+class Conll2012NerReader(ConllReader):
+    def __init__(self, besio=False):
+        super(Conll2012NerReader, self).__init__({3: "word", 4: "pos", 5: "parse", 10: "ne"})
+        self.besio = besio
+
+    def read_instances(self, rows):
+        instances = super(Conll2012NerReader, self).read_instances(rows)
+        for instance in instances:
+            instance[LABEL_KEY] = chunk(instance['ne'], besio=self.besio)
+        return instances
+
+
 class Conll2005Reader(ConllSrlReader):
     def __init__(self):
         super(Conll2005Reader, self).__init__({0: "word", 1: "pos", 2: "parse", 3: "ne", 4: "roleset", 5: "predicate"},

@@ -23,12 +23,6 @@ class NerTagger(DBLSTMTagger):
         super(NerTagger, self).__init__(features, num_layers, state_dim, num_classes, transition_params, crf, dblstm)
 
     def training_op(self):
-        # Use optimization algorithm described in Ma and Hovy 2016
-        # learning_rate = tf.train.inverse_time_decay(learning_rate=0.015,
-        #                                             global_step=self.global_step,
-        #                                             decay_steps=1,
-        #                                             decay_rate=0.05)
-        # optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         tvars = tf.trainable_variables()
         gradients = tf.gradients(self.loss, tvars)
@@ -57,7 +51,8 @@ class DeepNerTrainer(TaggerTrainer):
         return self.evaluate(gold_ys, pred_ys)
 
     def evaluate(self, gold_seqs, pred_seqs):
-        with tempfile.NamedTemporaryFile(mode='w') as temp:
+        output_file = open(self.output_file, 'w+b') if self.output_file else tempfile.NamedTemporaryFile()
+        with output_file as temp:
             for gold_labels, pred_labels in zip(gold_seqs, pred_seqs):
                 for x, y in zip(gold_labels, pred_labels):
                     temp.write("x {} {}\n".format(self.reverse_label_vocab[x], self.reverse_label_vocab[y]))
@@ -94,6 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--train', type=str, help='Binary (*.pkl) train file path.')
     parser.add_argument('--valid', type=str, help='Binary (*.pkl) validation file path.')
     parser.add_argument('--test', required=False, type=str, help='Binary (*.pkl) test file path.')
+    parser.add_argument('--output', required=False, type=str, help='Output file to store test predictions')
     parser.add_argument('--vocab', required=True, type=str, help='Path to directory containing vocabulary files.')
     parser.add_argument('--script', required=True, type=str, help='Path to evaluation script.')
     parser.add_argument('--log', default='ner_trainer.log', type=str, help='Path to output log.')
