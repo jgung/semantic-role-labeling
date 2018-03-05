@@ -84,29 +84,30 @@ case ${key} in
 esac
 done
 
-if [ -z "$DATA_PATH" ] || [ -z "$OUTPUT_PATH" ]; then
+if [[ -z "$DATA_PATH" ]] || [[ -z "$OUTPUT_PATH" ]]; then
     usage
     exit
 fi
 
-if [ -z "$CONFIG" ]; then
+if [[ -z "$CONFIG" ]]; then
     CONFIG="data/configs/he_acl_2017.json"
-    echo "Using default config at $CONFIG since none was provided."
+    echo "Using default config at $CONFIG since none was provided (use --config to specify one)"
 fi
 
-if [ -z "$TEST_FILE" ]; then
-    if [ -z "$TRAIN_FILE" ]; then
+if [[ -z "$TEST_FILE" ]]; then
+    if [[ -z "$TRAIN_FILE" ]]; then
         TRAIN_FILE="train-set.conll"
-        echo "Using default train file name, $TRAIN_FILE, since none was provided."
-    elif [ -z "$DEVEL_FILE" ]; then
+        echo "Using default train file name, $TRAIN_FILE, since none was provided (use --train to specify one)"
+    fi
+    if [[ -z "$DEVEL_FILE" ]]; then
         DEVEL_FILE="dev-set.conll"
-        echo "Using default devel file name, $DEVEL_FILE, since none was provided."
+        echo "Using default devel file name, $DEVEL_FILE, since none was provided (use --dev to specify one)"
     fi
 fi
 
 extract_features() {
     OUTPUT_FILE="${OUTPUT_PATH%/}/${2%$EXT}pkl"
-    if [ -f ${OUTPUT_FILE} ]; then
+    if [[ -f ${OUTPUT_FILE} ]]; then
         echo "Skipping $OUTPUT_FILE since it already exists."
         return 0
     fi
@@ -123,7 +124,8 @@ extract_features() {
         --dataset $CORPUS \
         --ext $EXT"
 
-    if [ -n ${CUSTOM_READER} ]; then
+    if [[ -n ${CUSTOM_READER} ]]; then
+        echo "Using custom reader at '$CUSTOM_READER'"
         FEAT_ARGS="$FEAT_ARGS --custom $CUSTOM_READER"
     fi
 
@@ -145,7 +147,7 @@ extract_features() {
 
 train_model() {
     LOAD=""
-    if [ -f "$OUTPUT_PATH/checkpoint" ]; then
+    if [[ -f "$OUTPUT_PATH/checkpoint" ]]; then
         echo "Continuing training from checkpoint file at ${OUTPUT_PATH%/}/checkpoint"
         LOAD="--load $OUTPUT_PATH"
     fi
@@ -162,7 +164,7 @@ train_model() {
 }
 
 test_model() {
-    if [ ! -f "$OUTPUT_PATH/checkpoint" ]; then
+    if [[ ! -f "$OUTPUT_PATH/checkpoint" ]]; then
         echo "Couldn't locate checkpoint file at $OUTPUT_PATH/checkpoint".
         return 1
     fi
@@ -178,16 +180,16 @@ test_model() {
 
 VOCAB_PATH="$OUTPUT_PATH/vocab"
 
-if [ ! -d ${VOCAB_PATH} ]; then
+if [[ ! -d ${VOCAB_PATH} ]]; then
     mkdir -p ${VOCAB_PATH}
 fi
 
 export PYTHONPATH=${PYTHONPATH}:`pwd`
 
-if [ -n "$TRAIN_FILE" ]; then
+if [[ -n "$TRAIN_FILE" ]]; then
     extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
 fi
 
-if [ -n "$TEST_FILE" ]; then
+if [[ -n "$TEST_FILE" ]]; then
     extract_features load ${TEST_FILE} && test_model
 fi

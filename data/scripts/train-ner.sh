@@ -14,7 +14,7 @@ function usage()
     echo -e "\t--test\t(Optional) test corpus file name"
     echo -e "\t-o --output\tPath to directory for output files used during training, such as vocabularies and checkpoints"
     echo -e "\t-c --config\t(Optional) .json file used to configure features and model hyper-parameters"
-    echo -e "\t--corpus\t(Optional) Corpus type in [conll03, conll2012], '$CORPUS' by default"
+    echo -e "\t--corpus\t(Optional) Corpus type in [[conll03, conll2012]], '$CORPUS' by default"
 }
 
 while [[ $# -gt 0 ]]
@@ -64,19 +64,19 @@ case ${key} in
 esac
 done
 
-if [ -z "$TEST_FILE" ]; then
-    if [ -z "$TRAIN_FILE" ] || [ -z "$DEVEL_FILE" ]; then
+if [[ -z "$TEST_FILE" ]]; then
+    if [[ -z "$TRAIN_FILE" ]] || [[ -z "$DEVEL_FILE" ]]; then
         usage
         exit 1
     fi
 fi
 
-if [ -z "$OUTPUT_PATH" ]; then
+if [[ -z "$OUTPUT_PATH" ]]; then
     usage
     exit 1
 fi
 
-if [ -z "$CONFIG" ]; then
+if [[ -z "$CONFIG" ]]; then
     CONFIG="data/configs/ner.json"
     echo "Using default config at $CONFIG since none was provided."
 fi
@@ -84,7 +84,7 @@ fi
 extract_features() {
     FILE_NAME=$(basename $2)
     OUTPUT_FILE="${OUTPUT_PATH%/}/$FILE_NAME.pkl"
-    if [ -f ${OUTPUT_FILE} ]; then
+    if [[ -f ${OUTPUT_FILE} ]]; then
         echo "Skipping $OUTPUT_FILE since it already exists."
         return 0
     fi
@@ -110,7 +110,7 @@ extract_features() {
 
 train_model() {
     LOAD=""
-    if [ -f "$OUTPUT_PATH/checkpoint" ]; then
+    if [[ -f "$OUTPUT_PATH/checkpoint" ]]; then
         echo "Continuing training from checkpoint file at ${OUTPUT_PATH%/}/checkpoint"
         LOAD="--load $OUTPUT_PATH"
     fi
@@ -129,7 +129,7 @@ train_model() {
 }
 
 test_model() {
-    if [ ! -f "$OUTPUT_PATH/checkpoint" ]; then
+    if [[ ! -f "$OUTPUT_PATH/checkpoint" ]]; then
         echo "Couldn't locate checkpoint file at $OUTPUT_PATH/checkpoint".
         return 1
     fi
@@ -146,16 +146,16 @@ test_model() {
 
 VOCAB_PATH="$OUTPUT_PATH/vocab"
 
-if [ ! -d ${VOCAB_PATH} ]; then
+if [[ ! -d ${VOCAB_PATH} ]]; then
     mkdir -p ${VOCAB_PATH}
 fi
 
 export PYTHONPATH=${PYTHONPATH}:`pwd`
 
-if [ -n "$TRAIN_FILE" ]; then
+if [[ -n "$TRAIN_FILE" ]]; then
     extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
 fi
 
-if [ -n "$TEST_FILE" ]; then
+if [[ -n "$TEST_FILE" ]]; then
     extract_features load ${TEST_FILE} && test_model
 fi
