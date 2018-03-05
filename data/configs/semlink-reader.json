@@ -1,0 +1,8 @@
+{
+  "columns": {
+    "word": 2,
+    "roleset": 4,
+    "predicate": 5
+  },
+  "arg_start_col": 6
+}
