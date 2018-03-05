@@ -20,6 +20,7 @@ function usage()
     echo -e "\t--test\t(Optional) test corpus file name in directory given by '-o' or '--output'"
     echo -e "\t--corpus\t(Optional) Corpus type in [conll2012, conll05], '$CORPUS' by default"
     echo -e "\t--custom\t(Optional) .json configuration for a custom corpus reader"
+    echo -e "\t--mappings\t(Optional) predicate mappings file (3 column: 'lemma roleset mapped_value')"
 }
 
 while [[ $# -gt 0 ]]
@@ -68,6 +69,11 @@ case ${key} in
     ;;
     --corpus)
     CORPUS=$2
+    shift
+    shift
+    ;;
+    --mappings)
+    MAPPINGS=$2
     shift
     shift
     ;;
@@ -145,6 +151,12 @@ extract_features() {
     return 0
 }
 
+MAPPING_ARG=""
+if [[ -n "$MAPPINGS" ]]; then
+    echo "Using predicate mappings file at $MAPPINGS"
+    MAPPING_ARG="--mappings $MAPPINGS"
+fi
+
 train_model() {
     LOAD=""
     if [[ -f "$OUTPUT_PATH/checkpoint" ]]; then
@@ -160,7 +172,8 @@ train_model() {
         --vocab ${VOCAB_PATH} \
         --log "$OUTPUT_PATH/trainer-$MODE.log" \
         --script ./data/scripts/srl-eval.pl \
-        ${LOAD}
+        ${LOAD} \
+        ${MAPPING_ARG}
 }
 
 test_model() {
@@ -175,7 +188,8 @@ test_model() {
         --vocab ${VOCAB_PATH} \
         --log "$OUTPUT_PATH/tester-$MODE.log" \
         --script ./data/scripts/srl-eval.pl \
-        --load ${OUTPUT_PATH}
+        --load ${OUTPUT_PATH} \
+        ${MAPPING_ARG}
 }
 
 VOCAB_PATH="$OUTPUT_PATH/vocab"

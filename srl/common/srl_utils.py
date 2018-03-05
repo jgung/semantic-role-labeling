@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import pickle
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 
@@ -36,6 +36,18 @@ def initialize_vectors(vector_map, vocabulary, dim):
             vector_map[word] = np.random.normal(0, 0.01, dim)
         emb[index] = vector_map[word]
     return emb
+
+
+def read_mappings(mappings_file):
+    result = defaultdict(dict)
+    with open(mappings_file, 'r') as mappings:
+        for line in mappings:
+            if not line.strip():
+                continue
+            fields = line.split()
+            rs = "{}.{}".format(fields[0], fields[1])
+            result[rs] = fields[2]
+    return result
 
 
 def serialize(serializable, out_path, out_name=None):
