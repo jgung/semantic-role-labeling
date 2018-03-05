@@ -1,8 +1,6 @@
 #!/bin/bash
 
 PROGRAM_NAME=$0
-TRAIN_FILE="train-set.conll"
-DEVEL_FILE="dev-set.conll"
 MODE="word"
 CORPUS="conll05"
 EXT="conll"
@@ -17,8 +15,9 @@ function usage()
     echo -e "\t-o --output\tPath to directory for output files used during training, such as vocabularies and checkpoints"
     echo -e "\t-c --config\t(Optional) .json file used to configure features and model hyper-parameters"
     echo -e "\t-m --mode\t(Optional) mode, '$MODE' by default, or 'phrase' for phrase-constrained model"
-    echo -e "\t-t --train\t(Optional) training corpus file name, '$TRAIN_FILE' by default"
-    echo -e "\t-v --valid\t(Optional) validation corpus file name, '$DEVEL_FILE' by default"
+    echo -e "\t-t --train\t(Optional) training corpus file name"
+    echo -e "\t-v --valid\t(Optional) validation corpus file name"
+    echo -e "\t--test\t(Optional) test corpus file name in directory given by '-o' or '--output'"
     echo -e "\t--corpus\t(Optional) Corpus type in [conll2012, conll05], '$CORPUS' by default"
     echo -e "\t--custom\t(Optional) .json configuration for a custom corpus reader"
 }
@@ -62,6 +61,11 @@ case ${key} in
     shift
     shift
     ;;
+    --test)
+    TEST_FILE=$2
+    shift
+    shift
+    ;;
     --corpus)
     CORPUS=$2
     shift
@@ -80,19 +84,30 @@ case ${key} in
 esac
 done
 
-if [ -z "$DATA_PATH" ] || [ -z "$OUTPUT_PATH" ]; then
+if [[ -z "$DATA_PATH" ]] || [[ -z "$OUTPUT_PATH" ]]; then
     usage
     exit
 fi
 
-if [ -z "$CONFIG" ]; then
+if [[ -z "$CONFIG" ]]; then
     CONFIG="data/configs/he_acl_2017.json"
-    echo "Using default config at $CONFIG since none was provided."
+    echo "Using default config at $CONFIG since none was provided (use --config to specify one)"
+fi
+
+if [[ -z "$TEST_FILE" ]]; then
+    if [[ -z "$TRAIN_FILE" ]]; then
+        TRAIN_FILE="train-set.conll"
+        echo "Using default train file name, $TRAIN_FILE, since none was provided (use --train to specify one)"
+    fi
+    if [[ -z "$DEVEL_FILE" ]]; then
+        DEVEL_FILE="dev-set.conll"
+        echo "Using default devel file name, $DEVEL_FILE, since none was provided (use --dev to specify one)"
+    fi
 fi
 
 extract_features() {
     OUTPUT_FILE="${OUTPUT_PATH%/}/${2%$EXT}pkl"
-    if [ -f ${OUTPUT_FILE} ]; then
+    if [[ -f ${OUTPUT_FILE} ]]; then
         echo "Skipping $OUTPUT_FILE since it already exists."
         return 0
     fi
@@ -109,7 +124,8 @@ extract_features() {
         --dataset $CORPUS \
         --ext $EXT"
 
-    if [ -n ${CUSTOM_READER} ]; then
+    if [[ -n ${CUSTOM_READER} ]]; then
+        echo "Using custom reader at '$CUSTOM_READER'"
         FEAT_ARGS="$FEAT_ARGS --custom $CUSTOM_READER"
     fi
 
@@ -131,7 +147,7 @@ extract_features() {
 
 train_model() {
     LOAD=""
-    if [ -f "$OUTPUT_PATH/checkpoint" ]; then
+    if [[ -f "$OUTPUT_PATH/checkpoint" ]]; then
         echo "Continuing training from checkpoint file at ${OUTPUT_PATH%/}/checkpoint"
         LOAD="--load $OUTPUT_PATH"
     fi
@@ -147,12 +163,33 @@ train_model() {
         ${LOAD}
 }
 
+test_model() {
+    if [[ ! -f "$OUTPUT_PATH/checkpoint" ]]; then
+        echo "Couldn't locate checkpoint file at $OUTPUT_PATH/checkpoint".
+        return 1
+    fi
+    python ./srl/srl_trainer.py \
+        --test "$OUTPUT_PATH/${TEST_FILE%$EXT}pkl" \
+        --output "$OUTPUT_PATH/${TEST_FILE%$EXT}.predictions.txt" \
+        --config ${CONFIG} \
+        --vocab ${VOCAB_PATH} \
+        --log "$OUTPUT_PATH/tester-$MODE.log" \
+        --script ./data/scripts/srl-eval.pl \
+        --load ${OUTPUT_PATH}
+}
+
 VOCAB_PATH="$OUTPUT_PATH/vocab"
 
-if [ ! -d ${VOCAB_PATH} ]; then
+if [[ ! -d ${VOCAB_PATH} ]]; then
     mkdir -p ${VOCAB_PATH}
 fi
 
 export PYTHONPATH=${PYTHONPATH}:`pwd`
 
-extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
+if [[ -n "$TRAIN_FILE" ]]; then
+    extract_features new ${TRAIN_FILE} && extract_features update ${DEVEL_FILE} && train_model
+fi
+
+if [[ -n "$TEST_FILE" ]]; then
+    extract_features load ${TEST_FILE} && test_model
+fi
