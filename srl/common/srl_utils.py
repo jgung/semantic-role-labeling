@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import pickle
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 
 import numpy as np
 
@@ -39,14 +39,13 @@ def initialize_vectors(vector_map, vocabulary, dim):
 
 
 def read_mappings(mappings_file):
-    result = defaultdict(dict)
+    result = {}
     with open(mappings_file, 'r') as mappings:
         for line in mappings:
             if not line.strip():
                 continue
             fields = line.split()
-            rs = "{}.{}".format(fields[0], fields[1])
-            result[rs] = fields[2]
+            result[fields[0]] = fields[1]
     return result
 
 

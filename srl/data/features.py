@@ -3,10 +3,10 @@ import math
 import numpy as np
 import tensorflow as tf
 
-from srl.common.constants import END_WORD, PAD_WORD, START_WORD, UNKNOWN_WORD, INSTANCE_INDEX, SENTENCE_INDEX
+from srl.common.constants import END_WORD, INSTANCE_INDEX, PAD_WORD, SENTENCE_INDEX, START_WORD, UNKNOWN_WORD
 from srl.common.constants import LABEL_KEY, LENGTH_KEY
 from srl.common.constants import UNKNOWN_INDEX
-from srl.common.srl_utils import deserialize, initialize_vectors, read_json, read_vectors, serialize
+from srl.common.srl_utils import deserialize, initialize_vectors, read_json, read_mappings, read_vectors, serialize
 
 
 class Feature(object):
@@ -64,6 +64,10 @@ def get_feature(feat_dict):
                 if _rank == 3:
                     return ListFeatureExtractor(key=key, apply_func=lambda x: [word.lower() for word in x])
                 return KeyFeatureExtractor(key=key, apply_func=lambda x: x.lower())
+            if extractor_name == 'mapper':
+                mapping_path = extractor_dict['file']
+                mappings = read_mappings(mapping_path)
+                return KeyFeatureExtractor(key=key, apply_func=lambda x: mappings.get(x, UNKNOWN_WORD))
 
         return IdentityExtractor()
 

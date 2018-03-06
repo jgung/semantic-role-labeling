@@ -81,6 +81,8 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[ROLESET_KEY] = [index == key and "{}.{}".format(pred, rs) or '-' for
+                                     index, (pred, rs) in enumerate(zip(fields[PREDICATE_KEY], fields[ROLESET_KEY]))]
             instance[INSTANCE_INDEX] = self.prop_count
             instance[SENTENCE_INDEX] = self.sentence_count
             if self.predicate_mapping_fn:
