@@ -1,0 +1,45 @@
+{
+  "max_epochs": 500,
+  "batch_size": 80,
+  "keep_prob": 0.9,
+  "max_length": 100,
+  "num_buckets": 100,
+  "lstm_num_layers": 8,
+  "lstm_hidden_dim": 300,
+  "dblstm": true,
+  "orthonormal_init": true,
+  "recurrent_dropout": true,
+  "highway": true,
+  "features": [
+    {
+      "name": "words",
+      "base": true,
+      "dim": -1,
+      "initializer": {
+        "pkl_path": "vectors.pkl",
+        "initializer_path": "data/vectors/glove.6B.100d.txt"
+      },
+      "extractor": {
+        "name": "lower",
+        "key": "word"
+      }
+    },
+    {
+      "name": "markers",
+      "dim": 10,
+      "extractor": {
+        "name": "key",
+        "key": "markers"
+      }
+    },
+    {
+      "name": "vnmappings",
+      "dim": 90,
+      "extractor": {
+        "name": "mapper",
+        "key": "roleset",
+        "file": "data/resources/pb-vn-mappings.txt"
+      }
+    }
+  ]
+}
