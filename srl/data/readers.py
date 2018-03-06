@@ -16,6 +16,10 @@ SINGLE = "S-"
 END = "E-"
 OUT = "O"
 
+WORD_KEY = "word"
+PREDICATE_KEY = "predicate"
+ROLESET_KEY = "roleset"
+
 
 class ConllReader(object):
     def __init__(self, index_field_map):
@@ -60,7 +64,7 @@ class ConllReader(object):
 
 
 class ConllSrlReader(ConllReader):
-    def __init__(self, index_field_map, pred_start, pred_end=0, pred_key="predicate"):
+    def __init__(self, index_field_map, pred_start, pred_end=0, pred_key=PREDICATE_KEY):
         super(ConllSrlReader, self).__init__(index_field_map)
         self._pred_start = pred_start
         self._pred_end = pred_end
@@ -76,6 +80,8 @@ class ConllSrlReader(ConllReader):
             instance = dict(fields)  # copy instance dictionary and add labels
             instance[LABEL_KEY] = labels
             instance[MARKER_KEY] = [index == key and '1' or '0' for index in range(0, len(labels))]
+            instance[ROLESET_KEY] = [index == key and "{}.{}".format(pred, rs) or '-' for
+                                     index, (pred, rs) in enumerate(zip(fields[PREDICATE_KEY], fields[ROLESET_KEY]))]
             instance[INSTANCE_INDEX] = self.prop_count
             instance[SENTENCE_INDEX] = self.sentence_count
             instances.append(instance)
@@ -126,7 +132,7 @@ class ConllSrlReader(ConllReader):
 
 class Conll2003Reader(ConllReader):
     def __init__(self, besio=False):
-        super(Conll2003Reader, self).__init__({0: "word", 1: "pos", 2: "chunk", 3: "ne"})
+        super(Conll2003Reader, self).__init__({0: WORD_KEY, 1: "pos", 2: "chunk", 3: "ne"})
         self.besio = besio
 
     def read_instances(self, rows):
@@ -138,7 +144,7 @@ class Conll2003Reader(ConllReader):
 
 class Conll2012NerReader(ConllReader):
     def __init__(self, besio=False):
-        super(Conll2012NerReader, self).__init__({3: "word", 4: "pos", 5: "parse", 10: "ne"})
+        super(Conll2012NerReader, self).__init__({3: WORD_KEY, 4: "pos", 5: "parse", 10: "ne"})
         self.besio = besio
 
     def read_instances(self, rows):
@@ -162,13 +168,13 @@ class CustomSrlReader(ConllSrlReader):
 
 class Conll2005Reader(ConllSrlReader):
     def __init__(self):
-        super(Conll2005Reader, self).__init__({0: "word", 1: "pos", 2: "parse", 3: "ne", 4: "roleset", 5: "predicate"},
+        super(Conll2005Reader, self).__init__({0: WORD_KEY, 1: "pos", 2: "parse", 3: "ne", 4: ROLESET_KEY, 5: PREDICATE_KEY},
                                               pred_start=6)
 
 
 class Conll2012Reader(ConllSrlReader):
     def __init__(self):
-        super(Conll2012Reader, self).__init__({3: "word", 4: "pos", 5: "parse", 6: "predicate", 7: "roleset"},
+        super(Conll2012Reader, self).__init__({3: WORD_KEY, 4: "pos", 5: "parse", 6: PREDICATE_KEY, 7: ROLESET_KEY},
                                               pred_start=11, pred_end=1)
         self.is_predicate = lambda x: x[self._pred_index] is not '-' and x[7] is not '-'
         self.skip_line = lambda line: line.startswith("#")  # skip comments

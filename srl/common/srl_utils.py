@@ -38,6 +38,17 @@ def initialize_vectors(vector_map, vocabulary, dim):
     return emb
 
 
+def read_mappings(mappings_file):
+    result = {}
+    with open(mappings_file, 'r') as mappings:
+        for line in mappings:
+            if not line.strip():
+                continue
+            fields = line.split()
+            result[fields[0]] = fields[1]
+    return result
+
+
 def serialize(serializable, out_path, out_name=None):
     if out_name:
         out_name = out_name if out_name.endswith(".pkl") else "{}.pkl".format(out_name)
