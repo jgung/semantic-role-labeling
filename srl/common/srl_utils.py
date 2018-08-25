@@ -12,7 +12,7 @@ import numpy as np
 def read_vectors(path, unk_word=None, pad_word=None, max_vecs=1000000):
     vecs = OrderedDict()
     dim = 0
-    with gzip.open(path, 'rb') if path.endswith('gz') else open(path, 'rb') as vector_file:
+    with gzip.open(path, 'rt') if path.endswith('gz') else open(path, 'rt') as vector_file:
         for index, line in enumerate(vector_file):
             if not line.strip():
                 continue
@@ -70,7 +70,7 @@ def str2bool(v):
 
 
 def read_json(json_path):
-    with open(json_path, 'r') as config:
+    with open(json_path, 'rt') as config:
         return json.load(config)
 
 
