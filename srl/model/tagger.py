@@ -90,8 +90,8 @@ class DBLSTMTagger(object):
             return tf.concat(inputs, 2, name="concatenated_inputs")
 
     def _dblstm_cell(self):
-        initializer = tf.orthogonal_initializer() if self.orthonormal_init else None
-        cell = HighwayLSTMCell(self.state_dim, highway=self.highway, initializer=initializer)
+        # initializer = tf.orthogonal_initializer() if self.orthonormal_init else None
+        cell = HighwayLSTMCell(self.state_dim, highway=self.highway, initializer=None)
         return DropoutWrapper(cell, variational_recurrent=self.recurrent_dropout, dtype=tf.float32,
                               output_keep_prob=self.dropout_keep_prob)
 
