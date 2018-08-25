@@ -9,7 +9,7 @@ from tensorflow.python.util import nest
 
 def deep_bidirectional_dynamic_rnn(cells, inputs, sequence_length):
     def _reverse(_input, seq_lengths):
-        return array_ops.reverse_sequence(input=_input, seq_lengths=seq_lengths, seq_dim=1, batch_dim=0)
+        return array_ops.reverse_sequence(input=_input, seq_lengths=seq_lengths, seq_axis=1, batch_axis=0)
 
     outputs, state = None, None
     with vs.variable_scope("dblstm"):

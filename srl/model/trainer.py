@@ -12,7 +12,7 @@ from srl.common.constants import END_INDEX, KEEP_PROB_KEY, LABEL_KEY, LENGTH_KEY
     SENTENCE_INDEX
 from srl.common.srl_utils import deserialize, read_json
 from srl.data.features import get_features_from_config
-from tagger import DBLSTMTagger
+from srl.model.tagger import DBLSTMTagger
 
 
 class TaggerTrainer(object):

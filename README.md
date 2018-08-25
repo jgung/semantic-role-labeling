@@ -8,7 +8,7 @@ This repository contains the following:
 
 ## Getting Started
 ### Prerequisites
-* Python 2.7
+* Python 3
 * virtualenv
 ### Virtualenv Installation
 ```bash

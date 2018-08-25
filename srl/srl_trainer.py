@@ -38,12 +38,12 @@ class DeepSrlTrainer(TaggerTrainer):
         return self.evaluate(words, pred_ys, gold_ys, indices, ids)
 
     def evaluate(self, words, pred_ys, gold_ys, indices, ids):
-        output_file = open(self.output_file, 'w+b') if self.output_file else tempfile.NamedTemporaryFile()
-        with tempfile.NamedTemporaryFile() as gold_temp, output_file as pred_temp:
+        output_file = open(self.output_file, 'wt') if self.output_file else tempfile.NamedTemporaryFile(mode='wt')
+        with tempfile.NamedTemporaryFile(mode='wt') as gold_temp, output_file as pred_temp:
             self._write_to_file(gold_temp, words, gold_ys, indices, ids)
             self._write_to_file(pred_temp, words, pred_ys, indices, ids)
-            result = subprocess.check_output(['perl', self.script_path, gold_temp.name, pred_temp.name]).decode('utf-8')
-            logging.info('\n%s', result)
+            result = subprocess.check_output(["perl", self.script_path, gold_temp.name, pred_temp.name], universal_newlines=True)
+            logging.info(result)
             return float(result.strip().split('\n')[6].strip().split()[6])
 
     def _write_to_file(self, output_file, xs, ys, indices, ids):

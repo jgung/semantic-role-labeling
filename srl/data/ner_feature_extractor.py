@@ -1,7 +1,7 @@
 import argparse
 
-from features import SequenceInstanceProcessor, get_features_from_config
-from readers import Conll2003Reader, Conll2012NerReader
+from srl.data.features import SequenceInstanceProcessor, get_features_from_config
+from srl.data.readers import Conll2003Reader, Conll2012NerReader
 from srl.common.srl_utils import serialize
 
 

@@ -51,7 +51,7 @@ class DeepNerTrainer(TaggerTrainer):
         return self.evaluate(gold_ys, pred_ys)
 
     def evaluate(self, gold_seqs, pred_seqs):
-        output_file = open(self.output_file, 'w+b') if self.output_file else tempfile.NamedTemporaryFile()
+        output_file = open(self.output_file, 'wt') if self.output_file else tempfile.NamedTemporaryFile()
         with output_file as temp:
             for gold_labels, pred_labels in zip(gold_seqs, pred_seqs):
                 for x, y in zip(gold_labels, pred_labels):
@@ -59,7 +59,7 @@ class DeepNerTrainer(TaggerTrainer):
                 temp.write("\n")  # sequence break
             temp.flush()
             temp.seek(0)
-            result = subprocess.check_output(["perl", self.script_path], stdin=temp).decode('utf-8')
+            result = subprocess.check_output(["perl", self.script_path], stdin=temp, universal_newlines=True)
             logging.info(result)
             return float(re.split('\s+', re.split('\n', result)[1].strip())[7])
 

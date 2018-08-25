@@ -1,8 +1,8 @@
 import argparse
 from os import path
 
-from features import SequenceInstanceProcessor, get_features_from_config
-from readers import Conll2005Reader, Conll2012Reader, CustomSrlReader, ConllPhraseReader
+from srl.data.features import SequenceInstanceProcessor, get_features_from_config
+from srl.data.readers import Conll2005Reader, Conll2012Reader, CustomSrlReader, ConllPhraseReader
 from srl.common.srl_utils import serialize
 
 
